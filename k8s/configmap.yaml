@@ -4,11 +4,6 @@ metadata:
   name: playly-config
   namespace: playly
 data:
-  # Frontend connects to backend via the Ingress path /api
   NEXT_PUBLIC_API_URL: "/api"
-
-  # Supabase public URL — safe to be in ConfigMap (not a secret)
   NEXT_PUBLIC_SUPABASE_URL: "https://koagwifcrrkojeowevqn.supabase.co"
-
-  # Real domain with HTTPS — used as OAuth redirect URL
-  FRONTEND_URL: "https://playly.online"
+  FRONTEND_URL: "http://playly.online"

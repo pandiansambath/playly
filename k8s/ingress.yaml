@@ -4,35 +4,14 @@ metadata:
   name: playly-ingress
   namespace: playly
   annotations:
-    # --- Routing ---
     nginx.ingress.kubernetes.io/rewrite-target: /$2
     nginx.ingress.kubernetes.io/proxy-body-size: "500m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
     nginx.ingress.kubernetes.io/enable-cors: "true"
-
-    # --- SSL / cert-manager ---
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    # IMPORTANT: edit-in-place adds challenge path INTO this ingress
-    # (avoids conflict with rewrite-target on separate solver ingresses)
-    acme.cert-manager.io/http01-edit-in-place: "true"
-
-    # STEP 1: Keep ssl-redirect OFF until cert is issued
-    # STEP 2: After cert is Ready, change both to "true" and re-apply
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
-
 spec:
   ingressClassName: nginx
-
-  tls:
-  - hosts:
-    - playly.online
-    - www.playly.online
-    secretName: playly-tls
-
   rules:
-  # --- playly.online ---
   - host: playly.online
     http:
       paths:
@@ -43,13 +22,6 @@ spec:
             name: playly-backend-svc
             port:
               number: 80
-      - path: /(.well-known/acme-challenge/.*)()
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: playly-frontend-svc
-            port:
-              number: 80
       - path: /()(.*)
         pathType: ImplementationSpecific
         backend:
@@ -57,8 +29,6 @@ spec:
             name: playly-frontend-svc
             port:
               number: 80
-
-  # --- www.playly.online ---
   - host: www.playly.online
     http:
       paths:
@@ -67,13 +37,6 @@ spec:
         backend:
           service:
             name: playly-backend-svc
-            port:
-              number: 80
-      - path: /(.well-known/acme-challenge/.*)()
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: playly-frontend-svc
             port:
               number: 80
       - path: /()(.*)
