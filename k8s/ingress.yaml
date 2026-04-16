@@ -12,26 +12,27 @@ metadata:
     nginx.ingress.kubernetes.io/enable-cors: "true"
 
     # --- SSL / cert-manager ---
-    # This tells cert-manager to issue a Let's Encrypt cert for the hosts below
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    # Force all HTTP → HTTPS (301 redirect)
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # IMPORTANT: edit-in-place adds challenge path INTO this ingress
+    # (avoids conflict with rewrite-target on separate solver ingresses)
+    acme.cert-manager.io/http01-edit-in-place: "true"
+
+    # STEP 1: Keep ssl-redirect OFF until cert is issued
+    # STEP 2: After cert is Ready, change both to "true" and re-apply
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
 
 spec:
   ingressClassName: nginx
 
-  # --- TLS / SSL certificate ---
-  # cert-manager will automatically create the secret 'playly-tls'
-  # by fetching a free cert from Let's Encrypt
   tls:
   - hosts:
     - playly.online
     - www.playly.online
-    secretName: playly-tls   # cert-manager fills this secret automatically
+    secretName: playly-tls
 
   rules:
-  # --- playly.online (apex domain) ---
+  # --- playly.online ---
   - host: playly.online
     http:
       paths:
@@ -42,7 +43,14 @@ spec:
             name: playly-backend-svc
             port:
               number: 80
-      - path: /()(.*) 
+      - path: /(.well-known/acme-challenge/.*)()
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: playly-frontend-svc
+            port:
+              number: 80
+      - path: /()(.*)
         pathType: ImplementationSpecific
         backend:
           service:
@@ -50,7 +58,7 @@ spec:
             port:
               number: 80
 
-  # --- www.playly.online → same services ---
+  # --- www.playly.online ---
   - host: www.playly.online
     http:
       paths:
@@ -61,7 +69,14 @@ spec:
             name: playly-backend-svc
             port:
               number: 80
-      - path: /()(.*) 
+      - path: /(.well-known/acme-challenge/.*)()
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: playly-frontend-svc
+            port:
+              number: 80
+      - path: /()(.*)
         pathType: ImplementationSpecific
         backend:
           service:
