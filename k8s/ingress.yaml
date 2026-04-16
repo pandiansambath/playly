@@ -4,15 +4,36 @@ metadata:
   name: playly-ingress
   namespace: playly
   annotations:
+    # --- Routing ---
     nginx.ingress.kubernetes.io/rewrite-target: /$2
     nginx.ingress.kubernetes.io/proxy-body-size: "500m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
     nginx.ingress.kubernetes.io/enable-cors: "true"
+
+    # --- SSL / cert-manager ---
+    # This tells cert-manager to issue a Let's Encrypt cert for the hosts below
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Force all HTTP → HTTPS (301 redirect)
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
 spec:
   ingressClassName: nginx
+
+  # --- TLS / SSL certificate ---
+  # cert-manager will automatically create the secret 'playly-tls'
+  # by fetching a free cert from Let's Encrypt
+  tls:
+  - hosts:
+    - playly.online
+    - www.playly.online
+    secretName: playly-tls   # cert-manager fills this secret automatically
+
   rules:
-  - http:
+  # --- playly.online (apex domain) ---
+  - host: playly.online
+    http:
       paths:
       - path: /api(/|$)(.*)
         pathType: ImplementationSpecific
@@ -21,7 +42,7 @@ spec:
             name: playly-backend-svc
             port:
               number: 80
-      - path: /()(.*)
+      - path: /()(.*) 
         pathType: ImplementationSpecific
         backend:
           service:
@@ -29,3 +50,21 @@ spec:
             port:
               number: 80
 
+  # --- www.playly.online → same services ---
+  - host: www.playly.online
+    http:
+      paths:
+      - path: /api(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: playly-backend-svc
+            port:
+              number: 80
+      - path: /()(.*) 
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: playly-frontend-svc
+            port:
+              number: 80

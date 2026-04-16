@@ -1,0 +1,29 @@
+# cert-manager — issues FREE SSL certs from Let's Encrypt automatically
+# Install with: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.5/cert-manager.yaml
+#
+# This ClusterIssuer tells cert-manager HOW to get certs:
+#   - Use Let's Encrypt production (free, trusted by all browsers)
+#   - 90-day certs auto-renewed by cert-manager (you never need to do it manually)
+#   - HTTP-01 challenge: LE verifies you own the domain by making an HTTP request to playly.online
+#
+# IMPORTANT: Replace email below with yours — LE sends cert expiry warnings to it
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    # Let's Encrypt production endpoint (use this for real certs)
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Your email — gets warning if cert fails to renew
+    email: pandiansambath@gmail.com
+    # Where cert-manager stores its private key
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+    # HTTP-01 challenge: LE visits http://playly.online/.well-known/acme-challenge/...
+    # cert-manager automatically handles this via your nginx ingress
+    - http01:
+        ingress:
+          ingressClassName: nginx
