@@ -12,6 +12,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
+  # --- playly.online ---
   - host: playly.online
     http:
       paths:
@@ -29,8 +30,29 @@ spec:
             name: playly-frontend-svc
             port:
               number: 80
+  # --- www.playly.online ---
   - host: www.playly.online
     http:
+      paths:
+      - path: /api(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: playly-backend-svc
+            port:
+              number: 80
+      - path: /()(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: playly-frontend-svc
+            port:
+              number: 80
+  # --- NO HOST (catch-all) ---
+  # Azure LB health probe sends requests WITHOUT a Host header.
+  # Without this rule, nginx returns 404 → LB marks backend unhealthy → blocks ALL traffic.
+  # This rule makes the health probe get a 200 → LB stays healthy → traffic flows.
+  - http:
       paths:
       - path: /api(/|$)(.*)
         pathType: ImplementationSpecific
