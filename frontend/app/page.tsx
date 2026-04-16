@@ -126,14 +126,14 @@ function LandingPage() {
       </div>
 
       {/* Left hero panel — overflow-y-auto so feature grid isn't cut on small screens */}
-      <div className="landing-left hidden md:flex flex-col justify-center px-12 flex-1 relative z-10 overflow-y-auto py-6">
+      <div className="landing-left hidden md:flex flex-col px-12 flex-1 relative z-10 overflow-y-auto py-4">
         <div className="relative">
 
           {/* Floating notes */}
           {notes.map((n, i) => <MusicNote key={i} style={n} />)}
 
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-8 fade-in"
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-4 mt-auto fade-in"
             style={{ background: 'rgba(var(--accent-rgb),0.1)', border: '1px solid rgba(var(--accent-rgb),0.25)' }}>
             <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
             <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
@@ -142,21 +142,21 @@ function LandingPage() {
           </div>
 
           {/* Hero headline */}
-          <h1 className="text-8xl font-black tracking-tight mb-6 leading-none fade-in delay-100">
+          <h1 className="text-6xl lg:text-8xl font-black tracking-tight mb-3 leading-none fade-in delay-100">
             <span className="gradient-text-animated">Play</span>
             <span style={{ color: 'var(--text-primary)' }}>Ly</span>
           </h1>
-          <p className="text-xl mb-3 leading-relaxed max-w-xs fade-in delay-200"
+          <p className="text-xl mb-2 leading-relaxed max-w-xs fade-in delay-200"
             style={{ color: 'var(--text-secondary)' }}>
             Your personal music universe.
           </p>
-          <p className="text-base mb-12 max-w-sm fade-in delay-300"
+          <p className="text-base mb-5 max-w-sm fade-in delay-300"
             style={{ color: 'var(--text-muted)' }}>
             Search any song. Stream instantly. Download free. Build your library — forever.
           </p>
 
           {/* Waveform */}
-          <div className="mb-12 fade-in delay-300">
+          <div className="mb-5 fade-in delay-300">
             <Waveform />
           </div>
 
@@ -176,6 +176,7 @@ function LandingPage() {
             ))}
           </div>
         </div>
+        <div className="mb-auto" />
       </div>
 
       {/* Right auth panel */}
