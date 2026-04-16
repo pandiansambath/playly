@@ -509,3 +509,4 @@ main { animation: fade-in 0.3s cubic-bezier(0.16,1,0.3,1); }
   .landing-hero { font-size: 4rem !important; }
   .landing-left { overflow-y: auto; }
 }
+/* v1.0-rebuild-trigger */
