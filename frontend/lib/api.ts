@@ -64,6 +64,43 @@ async function del(path: string) {
   return res.json()
 }
 
+// Video download — streams from backend, saves to user device, then backend deletes
+export async function downloadVideoFile(
+  youtubeId: string,
+  title: string,
+  quality = '720p',
+  onProgress?: (pct: number) => void,
+): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Not authenticated')
+  const res = await fetch(`${BASE}/video-download`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ youtube_id: youtubeId, quality }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  const total = Number(res.headers.get('content-length') || 0)
+  const reader = res.body!.getReader()
+  const chunks: Uint8Array[] = []
+  let received = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    received += value.length
+    if (total > 0 && onProgress) onProgress(Math.round((received / total) * 100))
+  }
+  const blob = new Blob(chunks, { type: 'video/mp4' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `${title.replace(/[^\w\s\-]/g, '').trim().slice(0, 80) || 'video'}.mp4`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 export const api = {
   search:             (q: string)                             => get(`/search?q=${encodeURIComponent(q)}`),
   download:           (youtube_id: string, quality = '192')   => post('/download', { youtube_id, quality }).then(d => { invalidateCache('library'); return d }),

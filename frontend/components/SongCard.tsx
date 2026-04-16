@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Play, Heart, MoreHorizontal, ListPlus, Trash2, Music, Download, Loader2, Check } from 'lucide-react'
 import { Song } from '@/lib/supabase'
 import { usePlayerStore } from '@/store/playerStore'
@@ -28,10 +29,15 @@ interface Props {
 export function SongCard({ song, queue = [], queueSource = '', isFavorite = false, onFavoriteToggle, showRemove, onRemove }: Props) {
   const { currentSong, isPlaying, setCurrentSong } = usePlayerStore()
   const [showMenu,    setShowMenu]    = useState(false)
+  const [menuAnchor,  setMenuAnchor]  = useState<{ top: number; right: number } | null>(null)
   const [playlists,   setPlaylists]   = useState<any[]>([])
   const [downloading, setDownloading] = useState(false)
   const [downloaded,  setDownloaded]  = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const menuRef   = useRef<HTMLDivElement>(null)
+  const menuBtnRef = useRef<HTMLButtonElement>(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => { setMounted(true) }, [])
 
   const isActive = currentSong?.id === song.id
   const mins = Math.floor(song.duration_seconds / 60)
@@ -41,11 +47,14 @@ export function SongCard({ song, queue = [], queueSource = '', isFavorite = fals
   useEffect(() => {
     if (!showMenu) return
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      if (
+        menuRef.current && !menuRef.current.contains(e.target as Node) &&
+        menuBtnRef.current && !menuBtnRef.current.contains(e.target as Node)
+      ) {
         setShowMenu(false)
+        setMenuAnchor(null)
       }
     }
-    // Slight delay so the opening click doesn't immediately close it
     const t = setTimeout(() => document.addEventListener('mousedown', handler), 50)
     return () => { clearTimeout(t); document.removeEventListener('mousedown', handler) }
   }, [showMenu])
@@ -57,18 +66,29 @@ export function SongCard({ song, queue = [], queueSource = '', isFavorite = fals
 
   async function openMenu(e: React.MouseEvent) {
     e.stopPropagation()
-    setShowMenu(v => !v)
+    if (showMenu) { setShowMenu(false); setMenuAnchor(null); return }
+    const btn = e.currentTarget as HTMLElement
+    const rect = btn.getBoundingClientRect()
+    // Position: below button, right-aligned. Flip up if too close to bottom
+    const spaceBelow = window.innerHeight - rect.bottom
+    const dropdownH  = 220
+    const top  = spaceBelow > dropdownH ? rect.bottom + 8 : rect.top - dropdownH - 4
+    const right = window.innerWidth - rect.right
+    setMenuAnchor({ top, right })
+    setShowMenu(true)
     if (!playlists.length) {
       try { const d = await api.getPlaylists(); setPlaylists(d.playlists || []) } catch {}
     }
   }
 
   async function addToPlaylist(pid: string) {
-    await api.addToPlaylist(pid, song.id)
+    try {
+      await api.addToPlaylist(pid, song.id)
+    } catch {}
     setShowMenu(false)
+    setMenuAnchor(null)
   }
 
-  // Download MP3 to user's device
   async function downloadToDevice(e: React.MouseEvent) {
     e.stopPropagation()
     if (downloading || downloaded) return
@@ -78,7 +98,6 @@ export function SongCard({ song, queue = [], queueSource = '', isFavorite = fals
       const blob = await res.blob()
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
-      // Clean filename: remove special chars, keep it readable
       const name = song.title.replace(/[^\w\s\-]/g, '').trim().slice(0, 80) || 'song'
       a.href     = url
       a.download = `${name}.mp3`
@@ -88,7 +107,7 @@ export function SongCard({ song, queue = [], queueSource = '', isFavorite = fals
       URL.revokeObjectURL(url)
       setDownloaded(true)
       setTimeout(() => setDownloaded(false), 4000)
-    } catch { /* silent fail */ }
+    } catch {}
     finally { setDownloading(false) }
   }
 
@@ -140,7 +159,7 @@ export function SongCard({ song, queue = [], queueSource = '', isFavorite = fals
         <button onClick={downloadToDevice}
           className="p-2 rounded-xl transition-all hover:scale-110 active:scale-95"
           style={{ color: downloaded ? '#10b981' : 'var(--text-muted)' }}
-          title="Download MP3 to device">
+          title="Download MP3">
           {downloading ? <Loader2 size={15} className="animate-spin" /> : downloaded ? <Check size={15} /> : <Download size={15} />}
         </button>
 
@@ -153,10 +172,12 @@ export function SongCard({ song, queue = [], queueSource = '', isFavorite = fals
           </button>
         )}
 
-        <button onClick={openMenu}
-          className="p-2 rounded-xl transition-all"
+        <button
+          ref={menuBtnRef}
+          onClick={openMenu}
+          className="p-2 rounded-xl transition-all hover:bg-white/10"
           style={{ color: 'var(--text-muted)' }}
-          title="Add to playlist">
+          title="More options">
           <MoreHorizontal size={15} />
         </button>
 
@@ -170,12 +191,23 @@ export function SongCard({ song, queue = [], queueSource = '', isFavorite = fals
         )}
       </div>
 
-      {/* Playlist dropdown */}
-      {showMenu && (
-        <div ref={menuRef}
-          className="absolute right-2 top-full mt-1 z-50 rounded-2xl overflow-hidden shadow-2xl fade-in-fast min-w-[190px]"
-          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}
-          onClick={e => e.stopPropagation()}>
+      {/* Playlist dropdown — rendered in portal to escape overflow:hidden containers */}
+      {showMenu && menuAnchor && mounted && createPortal(
+        <div
+          ref={menuRef}
+          className="fade-in-fast rounded-2xl overflow-hidden shadow-2xl"
+          style={{
+            position: 'fixed',
+            top: menuAnchor.top,
+            right: menuAnchor.right,
+            zIndex: 9999,
+            minWidth: 200,
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-strong)',
+            backdropFilter: 'blur(40px)',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
           <div className="px-3 py-2.5 flex items-center gap-2 border-b" style={{ borderColor: 'var(--border)' }}>
             <ListPlus size={13} style={{ color: 'var(--accent)' }} />
             <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Add to Playlist</span>
@@ -184,10 +216,8 @@ export function SongCard({ song, queue = [], queueSource = '', isFavorite = fals
             <div className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>No playlists yet</div>
           ) : playlists.map((pl: any) => (
             <button key={pl.id} onClick={() => addToPlaylist(pl.id)}
-              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-left transition-all"
-              style={{ color: 'var(--text-primary)' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--bg-raised)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}>
+              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-left transition-all hover:bg-white/5"
+              style={{ color: 'var(--text-primary)' }}>
               <div className="w-6 h-6 rounded-lg flex items-center justify-center"
                 style={{ background: 'rgba(var(--accent-rgb),0.12)' }}>
                 <Music size={11} style={{ color: 'var(--accent)' }} />
@@ -195,7 +225,8 @@ export function SongCard({ song, queue = [], queueSource = '', isFavorite = fals
               {pl.name}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

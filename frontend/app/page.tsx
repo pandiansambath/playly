@@ -1,472 +1,441 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import {
-  Search, Link as LinkIcon, Sparkles, Zap, Download,
-  Smartphone, Mail, Lock, User, Eye, EyeOff,
-  Music, Play, Headphones, Radio, Mic2,
+  Search, Music, Sparkles, Zap, Download,
+  Clock, Play, BookOpen, LayoutGrid, Heart,
 } from 'lucide-react'
+import Link from 'next/link'
 import { api } from '@/lib/api'
 import { SearchResult, YTResult } from '@/components/SearchResult'
 import { useAuth } from '@/components/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import { usePlayerStore } from '@/store/playerStore'
+import { Song } from '@/lib/supabase'
 
-function extractYoutubeId(input: string): string | null {
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/,
-    /^([A-Za-z0-9_-]{11})$/,
-  ]
-  for (const p of patterns) {
-    const m = input.match(p)
-    if (m) return m[1]
-  }
-  return null
-}
+// ─────────────────────────────────────────────────────────
+// STARS CONFIG (fixed seed so no hydration mismatch)
+// ─────────────────────────────────────────────────────────
+const STARS = Array.from({ length: 55 }, (_, i) => ({
+  w:    2 + (i * 17 % 3),
+  top:  (i * 37 % 97) + '%',
+  left: (i * 61 % 97) + '%',
+  dur:  2.2 + (i * 0.13 % 2.4) + 's',
+  del:  (i * 0.19 % 2.5) + 's',
+  op:   0.15 + (i * 0.11 % 0.45),
+}))
 
-// ── Floating music note ────────────────────────────────────────────────────────
-function MusicNote({ style }: { style: React.CSSProperties }) {
-  const notes = ['♪', '♫', '♩', '♬']
-  const note = notes[Math.floor(Math.random() * notes.length)]
+// ─────────────────────────────────────────────────────────
+// WAVEFORM LOGO ICON (animated bars)
+// ─────────────────────────────────────────────────────────
+function PlayLyLogo({ size = 'xl' }: { size?: 'sm' | 'xl' }) {
+  const heights = [38, 70, 55, 90, 42, 78, 52, 95, 60, 80]
+  const scale   = size === 'xl' ? 1 : 0.55
   return (
-    <span className="absolute text-2xl pointer-events-none select-none music-note"
-      style={{ color: `rgba(var(--accent-rgb),0.4)`, ...style }}>
-      {note}
-    </span>
-  )
-}
-
-// ── Animated waveform visualizer ──────────────────────────────────────────────
-function Waveform() {
-  const heights = [20, 45, 30, 60, 40, 70, 35, 55, 25, 50, 38, 65, 28, 48, 32]
-  return (
-    <div className="flex items-end gap-[3px] h-16">
-      {heights.map((h, i) => (
-        <div key={i}
-          className="w-1.5 rounded-full"
-          style={{
-            height: `${h}%`,
-            background: `linear-gradient(to top, var(--accent), var(--accent-alt))`,
-            opacity: 0.7 + (i % 3) * 0.1,
-            animation: `wave-rise ${0.6 + (i % 5) * 0.15}s ease-in-out infinite`,
-            animationDelay: `${i * 0.08}s`,
-          }} />
-      ))}
-    </div>
-  )
-}
-
-// ── Landing Page ───────────────────────────────────────────────────────────────
-function LandingPage() {
-  const [tab,      setTab]      = useState<'signin' | 'signup'>('signin')
-  const [email,    setEmail]    = useState('')
-  const [password, setPassword] = useState('')
-  const [name,     setName]     = useState('')
-  const [showPass, setShowPass] = useState(false)
-  const [loading,  setLoading]  = useState(false)
-  const [animating,setAnimating]= useState(false)
-  const [msg,      setMsg]      = useState<{ text: string; ok: boolean } | null>(null)
-
-  const notes = [
-    { top: '15%', left: '5%',  animationDuration: '4s',  animationDelay: '0s'   },
-    { top: '60%', left: '8%',  animationDuration: '5s',  animationDelay: '1.5s' },
-    { top: '35%', left: '18%', animationDuration: '4.5s',animationDelay: '0.8s' },
-    { top: '75%', left: '22%', animationDuration: '6s',  animationDelay: '2.2s' },
-    { top: '20%', left: '30%', animationDuration: '3.5s',animationDelay: '1s'   },
-  ]
-
-  const features = [
-    { icon: <Zap size={18} />,        title: 'Instant Stream',  desc: 'Zero buffering MP3', color: '#F59E0B' },
-    { icon: <Download size={18} />,   title: 'Free Downloads',  desc: 'Keep forever',        color: '#10B981' },
-    { icon: <Smartphone size={18} />, title: 'Background Play', desc: 'Lock screen controls', color: '#3B82F6' },
-    { icon: <Sparkles size={18} />,   title: 'Zero Ads',        desc: 'Clean forever',        color: '#EC4899' },
-  ]
-
-  function switchTab(t: 'signin' | 'signup') {
-    setAnimating(true)
-    setTimeout(() => { setTab(t); setMsg(null); setAnimating(false) }, 180)
-  }
-
-  async function handleEmailAuth(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true); setMsg(null)
-    try {
-      if (tab === 'signin') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
-        if (error) throw error
-      } else {
-        const { data, error } = await supabase.auth.signUp({ email, password })
-        if (error) throw error
-        if (data.user && name.trim()) {
-          await supabase.from('users').update({ name: name.trim() }).eq('id', data.user.id)
-        }
-        setMsg({ text: '✅ Account created! You are now signed in.', ok: true })
-      }
-    } catch (err: any) {
-      setMsg({ text: err.message || 'Something went wrong', ok: false })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  function googleLogin() {
-    supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/` : '/' }
-    })
-  }
-
-  return (
-    <div className="fixed inset-0 flex overflow-hidden" style={{ background: 'var(--bg-base)' }}>
-
-      {/* Aurora blobs */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="aurora-blob" style={{ width:'600px',height:'600px',top:'-150px',left:'-150px',background:'radial-gradient(circle,rgba(var(--accent-rgb),0.25),transparent 70%)',opacity:0.8 }} />
-        <div className="aurora-blob" style={{ width:'500px',height:'500px',bottom:'-100px',right:'-100px',background:'radial-gradient(circle,rgba(var(--accent-alt-rgb),0.2),transparent 70%)',opacity:0.7,animationDelay:'3s' }} />
-        <div className="aurora-blob" style={{ width:'400px',height:'400px',top:'40%',left:'35%',background:'radial-gradient(circle,rgba(59,130,246,0.12),transparent 70%)',animationDelay:'1.5s' }} />
-      </div>
-
-      {/* Left hero panel — overflow-y-auto so feature grid isn't cut on small screens */}
-      <div className="landing-left hidden md:flex flex-col px-12 flex-1 relative z-10 overflow-y-auto py-4">
-        <div className="relative">
-
-          {/* Floating notes */}
-          {notes.map((n, i) => <MusicNote key={i} style={n} />)}
-
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-4 mt-auto fade-in"
-            style={{ background: 'rgba(var(--accent-rgb),0.1)', border: '1px solid rgba(var(--accent-rgb),0.25)' }}>
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-              Free forever · No ads · YouTube-powered
-            </span>
-          </div>
-
-          {/* Hero headline */}
-          <h1 className="text-6xl lg:text-8xl font-black tracking-tight mb-3 leading-none fade-in delay-100">
-            <span className="gradient-text-animated">Play</span>
-            <span style={{ color: 'var(--text-primary)' }}>Ly</span>
-          </h1>
-          <p className="text-xl mb-2 leading-relaxed max-w-xs fade-in delay-200"
-            style={{ color: 'var(--text-secondary)' }}>
-            Your personal music universe.
-          </p>
-          <p className="text-base mb-5 max-w-sm fade-in delay-300"
-            style={{ color: 'var(--text-muted)' }}>
-            Search any song. Stream instantly. Download free. Build your library — forever.
-          </p>
-
-          {/* Waveform */}
-          <div className="mb-5 fade-in delay-300">
-            <Waveform />
-          </div>
-
-          {/* Feature grid */}
-          <div className="grid grid-cols-2 gap-3 max-w-sm fade-in delay-400">
-            {features.map((f) => (
-              <div key={f.title}
-                className="glass glass-hover rounded-2xl p-4 card-lift"
-                style={{ borderColor: `${f.color}22` }}>
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center mb-3"
-                  style={{ background: `${f.color}18`, color: f.color }}>
-                  {f.icon}
-                </div>
-                <p className="text-sm font-bold mb-0.5">{f.title}</p>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{f.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="mb-auto" />
-      </div>
-
-      {/* Right auth panel */}
-      <div className="flex flex-col justify-center items-center w-full md:w-[440px] md:flex-shrink-0 px-6 relative z-10">
-
-        {/* Mobile hero */}
-        <div className="md:hidden text-center mb-8 fade-in">
-          <div className="flex justify-center mb-3">
-            <Waveform />
-          </div>
-          <h1 className="text-6xl font-black tracking-tight mb-2">
-            <span className="gradient-text-animated">PlayLy</span>
-          </h1>
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Free music · No ads · Forever</p>
-        </div>
-
-        <div className="w-full max-w-sm">
-          <div className="rounded-3xl p-7 shadow-2xl fade-in"
-            style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', backdropFilter: 'blur(40px)' }}>
-
-            {/* Google button */}
-            <button onClick={googleLogin}
-              className="w-full flex items-center justify-center gap-3 py-3.5 rounded-2xl font-semibold text-sm
-                transition-all duration-200 mb-6 hover:scale-[1.02] active:scale-[0.98]"
-              style={{ background: 'white', color: '#111', boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="" className="w-4 h-4" />
-              Continue with Google
-            </button>
-
-            <div className="flex items-center gap-3 mb-5">
-              <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>or continue with email</span>
-              <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
-            </div>
-
-            {/* Tab switcher */}
-            <div className="flex rounded-xl overflow-hidden mb-5 p-1" style={{ background: 'var(--bg-raised)' }}>
-              {(['signin', 'signup'] as const).map(t => (
-                <button key={t} onClick={() => switchTab(t)}
-                  className="flex-1 py-2.5 text-xs font-bold rounded-lg transition-all duration-200"
-                  style={tab === t
-                    ? { background: 'var(--accent)', color: 'white', boxShadow: `0 4px 12px rgba(var(--accent-rgb),0.4)` }
-                    : { color: 'var(--text-muted)' }}>
-                  {t === 'signin' ? 'Sign In' : 'Sign Up'}
-                </button>
-              ))}
-            </div>
-
-            {/* Form */}
-            <form onSubmit={handleEmailAuth}
-              className={`flex flex-col gap-3 transition-all duration-200 ${animating ? 'opacity-0 translate-y-2' : 'opacity-100 translate-y-0'}`}>
-              {tab === 'signup' && (
-                <div className="relative">
-                  <User size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-                  <input value={name} onChange={e => setName(e.target.value)}
-                    placeholder="Display name"
-                    className="input-field w-full pl-9 pr-4 py-3.5 rounded-xl text-sm" />
-                </div>
-              )}
-              <div className="relative">
-                <Mail size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                  placeholder="Email address" required
-                  className="input-field w-full pl-9 pr-4 py-3.5 rounded-xl text-sm" />
-              </div>
-              <div className="relative">
-                <Lock size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-                <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
-                  placeholder="Password" required
-                  className="input-field w-full pl-9 pr-10 py-3.5 rounded-xl text-sm" />
-                <button type="button" onClick={() => setShowPass(s => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
-                  style={{ color: 'var(--text-muted)' }}>
-                  {showPass ? <EyeOff size={13} /> : <Eye size={13} />}
-                </button>
-              </div>
-
-              {msg && (
-                <p className={`text-xs px-1 ${msg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg.text}</p>
-              )}
-
-              <button type="submit" disabled={loading}
-                className="btn-accent w-full py-3.5 rounded-xl text-sm font-bold mt-1 disabled:opacity-50">
-                {loading ? '…' : tab === 'signin' ? 'Sign In →' : 'Create Account →'}
-              </button>
-            </form>
-        </div>
-
-          {/* Mobile feature badges */}
-          <div className="md:hidden grid grid-cols-4 gap-2 mt-4">
-            {features.map(f => (
-              <div key={f.title} className="glass rounded-xl p-2.5 text-center">
-                <div className="flex justify-center mb-1" style={{ color: f.color }}>{f.icon}</div>
-                <p className="text-[9px] font-bold leading-tight">{f.title}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Search Page ────────────────────────────────────────────────────────────────
-export default function HomePage() {
-  const { user, loading } = useAuth()
-  const [query,     setQuery]     = useState('')
-  const [results,   setResults]   = useState<YTResult[]>([])
-  const [searching, setSearching] = useState(false)
-  const [busy,      setBusy]      = useState<string | null>(null)
-  const [done,      setDone]      = useState<Record<string, any>>({})
-  const [msg,       setMsg]       = useState('')
-  const [pasteMode, setPasteMode] = useState(false)
-  const [pasteUrl,  setPasteUrl]  = useState('')
-  const setCurrentSong = usePlayerStore(s => s.setCurrentSong)
-
-  async function search(e: React.FormEvent) {
-    e.preventDefault()
-    if (!query.trim()) return
-    setSearching(true); setResults([]); setMsg('')
-    try { setResults((await api.search(query)).results) }
-    catch (err: any) { setMsg('Search failed: ' + err.message) }
-    finally { setSearching(false) }
-  }
-
-  async function download(r: YTResult) {
-    setBusy(r.youtube_id); setMsg('')
-    try {
-      const res = await api.download(r.youtube_id)
-      setDone(prev => ({ ...prev, [r.youtube_id]: res.song }))
-    } catch (err: any) { setMsg('❌ ' + err.message) }
-    finally { setBusy(null) }
-  }
-
-  function playDownloaded(r: YTResult) {
-    const song = done[r.youtube_id]
-    if (song) setCurrentSong(song, [song], 'Search')
-  }
-
-  async function downloadFromUrl() {
-    const ytId = extractYoutubeId(pasteUrl.trim())
-    if (!ytId) { setMsg('❌ Invalid YouTube URL'); return }
-    setBusy(ytId); setMsg('')
-    try {
-      await api.download(ytId)
-      setMsg('✅ Song added to your library!')
-      setPasteUrl('')
-    } catch (err: any) { setMsg('❌ ' + err.message) }
-    finally { setBusy(null) }
-  }
-
-  if (loading) return (
-    <div className="flex items-center justify-center h-72">
-      <div className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: `var(--accent) transparent transparent transparent` }} />
-    </div>
-  )
-
-  if (!user) return <LandingPage />
-
-  return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-
-      {/* Header */}
-      <div className="mb-8 fade-in">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-2xl flex items-center justify-center"
-            style={{ background: 'rgba(var(--accent-rgb),0.15)', border: '1px solid rgba(var(--accent-rgb),0.25)' }}>
-            <Headphones size={20} style={{ color: 'var(--accent)' }} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-black">Search Music</h1>
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Search by song, movie, singer, mood…</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Mode toggle */}
-      <div className="flex gap-2 mb-4 p-1 rounded-2xl" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-        {[
-          { id: false, label: 'Search', icon: <Search size={14} /> },
-          { id: true,  label: 'Paste URL', icon: <LinkIcon size={14} /> },
-        ].map(({ id, label, icon }) => (
-          <button key={String(id)} onClick={() => setPasteMode(id as boolean)}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all duration-200"
-            style={pasteMode === id ? {
-              background: 'var(--accent)',
-              color: 'white',
-              boxShadow: `0 4px 12px rgba(var(--accent-rgb),0.3)`,
-            } : { color: 'var(--text-muted)' }}>
-            {icon} {label}
-          </button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: size === 'xl' ? 12 : 6 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: size === 'xl' ? 3 : 2 }}>
+        {heights.map((h, i) => (
+          <div key={i} className="logo-bar"
+            style={{
+              width:   Math.round(4 * scale),
+              height:  Math.round(h * scale * 0.36),
+              borderRadius: 99,
+              background: 'linear-gradient(to top, var(--accent), var(--accent-alt))',
+              transformOrigin: 'bottom',
+              animationDuration: `${0.48 + i * 0.08}s`,
+              animationDelay:    `${i * 0.045}s`,
+            }} />
         ))}
       </div>
+      <span style={{
+        fontSize:   size === 'xl' ? 36 : 18,
+        fontWeight: 900,
+        letterSpacing: '-0.02em',
+        background: 'var(--gradient-text)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor:  'transparent',
+        backgroundClip: 'text',
+      }}>PlayLy</span>
+    </div>
+  )
+}
 
-      {/* Search/Paste form */}
-      {!pasteMode ? (
-        <form onSubmit={search} className="flex gap-2 mb-5">
-          <input value={query} onChange={e => setQuery(e.target.value)}
-            placeholder="e.g. Kesariya, Deva Deva, Raataan Lambiyan…"
-            className="input-field flex-1 rounded-2xl px-4 py-3.5 text-sm" />
-          <button type="submit" disabled={searching}
-            className="btn-accent px-5 py-3.5 rounded-2xl text-sm font-bold disabled:opacity-50">
-            {searching ? (
-              <div className="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
-            ) : <Search size={18} />}
-          </button>
-        </form>
-      ) : (
-        <div className="flex gap-2 mb-5">
-          <input value={pasteUrl} onChange={e => setPasteUrl(e.target.value)}
-            placeholder="https://youtube.com/watch?v=..."
-            className="input-field flex-1 rounded-2xl px-4 py-3.5 text-sm" />
-          <button onClick={downloadFromUrl} disabled={!!busy || !pasteUrl.trim()}
-            className="btn-accent px-5 py-3.5 rounded-2xl text-sm font-bold disabled:opacity-50">
-            {busy ? '…' : 'Add'}
-          </button>
+// ─────────────────────────────────────────────────────────
+// LANDING PAGE
+// ─────────────────────────────────────────────────────────
+function LandingPage() {
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState('')
+
+  async function signIn() {
+    setLoading(true); setError('')
+    const { error: e } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    })
+    if (e) { setError(e.message); setLoading(false) }
+  }
+
+  return (
+    <div className="landing-root" style={{ fontFamily: 'Inter, sans-serif' }}>
+      {/* ─── Star field ─── */}
+      {STARS.map((s, i) => (
+        <div key={i} className="landing-star pointer-events-none"
+          style={{
+            top: s.top, left: s.left,
+            width: s.w, height: s.w,
+            background: 'white',
+            opacity: s.op,
+            animationDuration: s.dur,
+            animationDelay:    s.del,
+          }} />
+      ))}
+
+      {/* ─── Aurora blobs ─── */}
+      <div className="aurora-blob" style={{ width: 500, height: 500, top: '-10%', left: '-5%',  background: 'rgba(139,92,246,0.22)', animationDelay: '0s' }} />
+      <div className="aurora-blob" style={{ width: 420, height: 420, top: '40%',  right: '-8%', background: 'rgba(236,72,153,0.18)', animationDelay: '2s' }} />
+      <div className="aurora-blob" style={{ width: 360, height: 360, bottom: '-5%', left: '25%', background: 'rgba(99,102,241,0.15)', animationDelay: '4s' }} />
+
+      {/* ─── LEFT PANEL ─── */}
+      <div className="landing-left">
+
+        {/* Logo */}
+        <div className="mb-5 fade-in">
+          <PlayLyLogo size="xl" />
         </div>
-      )}
 
-      {/* Error/success message */}
-      {msg && (
-        <div className="mb-4 px-4 py-3 rounded-2xl text-sm fade-in"
-          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-          {msg}
+        {/* Hero */}
+        <div className="mb-4 fade-in delay-100">
+          <h1 className="landing-hero-title fade-in"
+            style={{
+              fontSize:    'clamp(2.2rem, 5vw, 3.8rem)',
+              fontWeight:  900,
+              lineHeight:  1.08,
+              letterSpacing: '-0.03em',
+              color: 'var(--text-primary)',
+            }}>
+            Your music,{' '}
+            <span style={{
+              background: 'linear-gradient(120deg, var(--accent), var(--accent-alt), #f97316)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor:  'transparent',
+              backgroundClip: 'text',
+            }}>beautifully</span>
+            <br />streamed.
+          </h1>
+          <p className="landing-subtitle mt-3 text-sm leading-relaxed"
+            style={{ color: 'var(--text-secondary)', maxWidth: 360 }}>
+            Search millions of songs, build playlists, and listen instantly — all powered by YouTube.
+          </p>
         </div>
-      )}
 
-      {/* Searching spinner */}
-      {searching && (
-        <div className="flex flex-col items-center py-14 gap-4">
-          <div className="relative">
-            <div className="w-12 h-12 rounded-full border-2 border-t-transparent animate-spin"
-              style={{ borderColor: `var(--accent) transparent transparent transparent` }} />
-            <Music size={16} className="absolute inset-0 m-auto" style={{ color: 'var(--accent)' }} />
+        {/* Feature chips (compact) */}
+        <div className="landing-feature-grid flex flex-wrap gap-2 mb-6 fade-in delay-200">
+          {([
+            [Zap,       'Instant play'],
+            [Download,  'Offline ready'],
+            [Sparkles,  'Smart discover'],
+            [Heart,     'Build playlists'],
+          ] as const).map(([Icon, lbl], i) => (
+            <div key={i}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
+              style={{
+                background:  'rgba(255,255,255,0.06)',
+                border:      '1px solid rgba(255,255,255,0.1)',
+                fontSize:    12,
+                color:       'var(--text-secondary)',
+              }}>
+              {/* @ts-ignore */}
+              <Icon size={12} style={{ color: 'var(--accent)' }} />
+              {lbl}
+            </div>
+          ))}
+        </div>
+
+        {/* ── Google OAuth button (animated border — Issue 3) ── */}
+        <div className="fade-in delay-300">
+          <button onClick={signIn} disabled={loading}
+            id="google-signin-btn"
+            className="oauth-google-btn w-full flex items-center justify-center gap-3 py-3.5 px-6 font-semibold text-sm disabled:opacity-60"
+            style={{ maxWidth: 340 }}>
+            {loading ? (
+              <div className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 48 48">
+                <path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.9 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.4-.1-2.7-.5-4z"/>
+                <path fill="#34A853" d="M6.3 14.7l7 5.1C15.1 16 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 16.3 3 9.7 7.9 6.3 14.7z"/>
+                <path fill="#FBBC05" d="M24 45c5.9 0 11-1.9 14.9-5.3l-6.9-5.7C29.9 36.1 27.1 37 24 37c-5.8 0-10.7-3.9-12.5-9.3l-7 5.4C7.9 41.2 15.4 45 24 45z"/>
+                <path fill="#EA4335" d="M43.6 20H24v8.5h11.8c-.8 2.4-2.3 4.4-4.3 5.7l6.9 5.7C43 36 45 30.5 45 24c0-1.4-.2-2.7-.4-4z"/>
+              </svg>
+            )}
+            <span style={{ color: '#ffffff' }}>
+              {loading ? 'Signing in…' : 'Continue with Google'}
+            </span>
+          </button>
+          {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+        </div>
+
+        {/* Tiny note */}
+        <p className="mt-4 fade-in delay-400" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          Free forever · No credit card
+        </p>
+      </div>
+
+      {/* ─── RIGHT PANEL — animated notes visual ─── */}
+      <div className="hidden md:flex flex-col items-center justify-center flex-1 relative overflow-hidden"
+        style={{ zIndex: 1 }}>
+        {/* Big glowing disc */}
+        <div className="relative flex items-center justify-center" style={{
+          width: 260, height: 260,
+          borderRadius: '50%',
+          background: `radial-gradient(circle, rgba(139,92,246,0.18) 0%, transparent 70%)`,
+        }}>
+          {/* Outer ring */}
+          <div style={{
+            position: 'absolute', inset: -2,
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, rgba(139,92,246,0.45), rgba(236,72,153,0.35), transparent)',
+            animation: 'spin-disc 18s linear infinite',
+          }} />
+          {/* Album art mock */}
+          <div style={{
+            width: 200, height: 200, borderRadius: '50%',
+            background: 'linear-gradient(135deg, #1a0a3a, #0f0715)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 20px 80px rgba(139,92,246,0.35)',
+            border: '1px solid rgba(139,92,246,0.2)',
+            position: 'relative',
+          }}>
+            <Music size={64} style={{ color: 'rgba(139,92,246,0.5)' }} />
+            {/* Center dot */}
+            <div style={{
+              position: 'absolute', width: 16, height: 16, borderRadius: '50%',
+              background: 'var(--accent)', top: '50%', left: '50%',
+              transform: 'translate(-50%,-50%)',
+              boxShadow: '0 0 12px rgba(139,92,246,0.8)',
+            }} />
           </div>
-          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Searching YouTube…</span>
         </div>
+
+        {/* Floating notes */}
+        {[...Array(6)].map((_, i) => (
+          <div key={i}
+            className="absolute text-2xl select-none pointer-events-none music-note"
+            style={{
+              bottom: `${15 + i * 12}%`,
+              left:   `${18 + (i % 3) * 28}%`,
+              animationDuration: `${2.5 + i * 0.5}s`,
+              animationDelay:    `${i * 0.6}s`,
+              opacity: 0,
+              fontSize: 20 - i,
+              color: i % 2 === 0 ? 'rgba(139,92,246,0.8)' : 'rgba(236,72,153,0.7)',
+            }}>
+            {i % 3 === 0 ? '♪' : i % 3 === 1 ? '♫' : '🎵'}
+          </div>
+        ))}
+
+        {/* Waveform at bottom of right panel */}
+        <div className="absolute bottom-10 flex items-end gap-1" style={{ opacity: 0.4 }}>
+          {[...Array(18)].map((_, i) => (
+            <div key={i} className="eq-bar" style={{
+              width: 4,
+              height: Math.round(8 + Math.sin(i * 0.9) * 20),
+              borderRadius: 4,
+              background: `linear-gradient(to top, var(--accent), var(--accent-alt))`,
+              transformOrigin: 'bottom',
+              animationDuration: `${0.5 + i * 0.06}s`,
+              animationDelay:    `${i * 0.04}s`,
+            }} />
+          ))}
+        </div>
+      </div>
+
+      {/* ─── Subtle easter egg link — developer page ─── */}
+      <Link href="/developer" className="dev-egg-link">
+        made with ♪
+      </Link>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
+// SEARCH BAR
+// ─────────────────────────────────────────────────────────
+function SearchBar({ value, onChange, loading }: {
+  value: string
+  onChange: (v: string) => void
+  loading: boolean
+}) {
+  return (
+    <div className="relative">
+      <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+        {loading
+          ? <div className="w-4 h-4 rounded-full border-2 border-[var(--accent)] border-t-transparent animate-spin" />
+          : <Search size={17} style={{ color: 'var(--text-muted)' }} />
+        }
+      </div>
+      <input
+        id="main-search"
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder="Search songs, artists, movies…"
+        className="input-field w-full pl-11 pr-4 py-3.5 rounded-2xl text-sm font-medium"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}
+        autoComplete="off"
+        autoFocus
+      />
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
+// MAIN SEARCH / APP PAGE
+// ─────────────────────────────────────────────────────────
+function SearchPage() {
+  const [query,        setQuery]        = useState('')
+  const [results,      setResults]      = useState<YTResult[]>([])
+  const [searching,    setSearching]    = useState(false)
+  const [downloading,  setDownloading]  = useState<Set<string>>(new Set())
+  const [done,         setDone]         = useState<Set<string>>(new Set())
+  const [error,        setError]        = useState('')
+  const setCurrentSong = usePlayerStore(s => s.setCurrentSong)
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    const q = query.trim()
+    if (!q) { setResults([]); return }
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true); setError('')
+      try {
+        const d = await api.search(q)
+        setResults(d.results || [])
+      } catch (e: any) {
+        setError(e.message || 'Search failed')
+      } finally { setSearching(false) }
+    }, 420)
+    return () => clearTimeout(debounceRef.current)
+  }, [query])
+
+  async function handleDownload(r: YTResult) {
+    if (downloading.has(r.youtube_id)) return
+    setDownloading(d => new Set([...d, r.youtube_id]))
+    try {
+      await api.download(r.youtube_id)
+      setDone(d => new Set([...d, r.youtube_id]))
+    } catch {}
+    finally { setDownloading(d => { const s = new Set(d); s.delete(r.youtube_id); return s }) }
+  }
+
+  function handlePlay(r: YTResult) {
+    // Create a minimal Song object for immediate playback from search
+    const song: Song = {
+      id:               r.youtube_id,
+      youtube_id:       r.youtube_id,
+      title:            r.title,
+      movie_name:       r.channel,
+      thumbnail_url:    r.thumbnail_url,
+      duration_seconds: r.duration_seconds,
+      supabase_url:     '',
+    }
+    setCurrentSong(song, [song], 'Search')
+  }
+
+  return (
+    <div className="max-w-xl mx-auto px-4 py-6 page-pad">
+
+      {/* Welcome header */}
+      <div className="mb-5 fade-in">
+        <div className="flex items-center gap-3 mb-1.5">
+          <PlayLyLogo size="sm" />
+        </div>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          What are you in the mood for?
+        </p>
+      </div>
+
+      {/* Search bar */}
+      <div className="mb-4 fade-in delay-100">
+        <SearchBar value={query} onChange={setQuery} loading={searching} />
+      </div>
+
+      {/* Error */}
+      {error && (
+        <p className="text-sm text-red-400 mb-3 px-1 fade-in">{error}</p>
       )}
 
-      {/* Results — scrolls INSIDE this box, site stays fixed */}
+      {/* Search results */}
       {results.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
-              {results.length} results for &quot;{query}&quot;
-            </p>
-            <span className="text-xs px-2 py-1 rounded-lg"
-              style={{ background: 'rgba(var(--accent-rgb),0.1)', color: 'var(--accent)' }}>
-              Scroll to see all
+        <div className="glass rounded-3xl overflow-hidden fade-in search-results-scroll"
+          style={{ border: '1px solid var(--border)' }}>
+          <div className="px-4 py-3 flex items-center justify-between border-b"
+            style={{ borderColor: 'var(--border)' }}>
+            <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>
+              {results.length} results
             </span>
           </div>
-          {/* Fixed-height scroll container — site scroll unaffected */}
-          <div className="search-results-scroll rounded-2xl"
-            style={{ border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
-            <div className="flex flex-col divide-y" style={{ borderColor: 'var(--border)' }}>
-              {results.map((r, i) => (
-                <div key={r.youtube_id} className="fade-in" style={{ animationDelay: `${i * 0.03}s` }}>
-                  <SearchResult
-                    result={r}
-                    onDownload={download}
-                    onPlay={playDownloaded}
-                    isDownloading={busy === r.youtube_id}
-                    isDone={!!done[r.youtube_id]}
-                  />
-                </div>
-              ))}
+          {results.map((r) => (
+            <div key={r.youtube_id} className="border-b last:border-b-0"
+              style={{ borderColor: 'var(--border)' }}>
+              <SearchResult
+                result={r}
+                onDownload={handleDownload}
+                onPlay={handlePlay}
+                isDownloading={downloading.has(r.youtube_id)}
+                isDone={done.has(r.youtube_id)}
+              />
             </div>
-          </div>
+          ))}
         </div>
       )}
 
       {/* Empty state */}
-      {!searching && results.length === 0 && !pasteMode && (
-        <div className="flex flex-col items-center py-24 fade-in">
-          <div className="relative mb-6">
-            <div className="w-20 h-20 rounded-3xl flex items-center justify-center"
-              style={{ background: 'rgba(var(--accent-rgb),0.08)', border: '1px solid rgba(var(--accent-rgb),0.15)' }}>
-              <Radio size={36} style={{ color: 'var(--accent)', opacity: 0.5 }} />
-            </div>
-            <div className="absolute -top-2 -right-2 w-8 h-8 rounded-xl flex items-center justify-center"
-              style={{ background: 'rgba(var(--accent-alt-rgb),0.15)', border: '1px solid rgba(var(--accent-alt-rgb),0.2)' }}>
-              <Mic2 size={14} style={{ color: 'var(--accent-alt)' }} />
-            </div>
+      {!query && !searching && (
+        <div className="flex flex-col items-center py-16 fade-in">
+          <div className="w-16 h-16 rounded-3xl flex items-center justify-center mb-4"
+            style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+            <Search size={28} style={{ color: 'var(--text-muted)', opacity: 0.5 }} />
           </div>
-          <p className="text-base font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Discover any song</p>
-          <p className="text-sm text-center max-w-xs" style={{ color: 'var(--text-muted)' }}>
-            Search by name, movie, singer, actor — or any mood hint
-          </p>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Search to discover music</p>
         </div>
       )}
+
+      {/* Subtle dev link */}
+      <Link href="/developer" className="dev-egg-link">
+        made with ♪
+      </Link>
     </div>
   )
+}
+
+// ─────────────────────────────────────────────────────────
+// ROOT PAGE
+// ─────────────────────────────────────────────────────────
+export default function HomePage() {
+  const { user, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center" style={{ background: 'var(--bg-base)' }}>
+        <div className="flex flex-col items-center gap-5">
+          <div className="flex items-end gap-1">
+            {[40, 75, 55, 90, 45, 80, 52, 95, 62].map((h, i) => (
+              <div key={i} className="eq-bar rounded-full"
+                style={{
+                  width: 5, height: `${h * 0.48}px`,
+                  background: 'linear-gradient(to top, var(--accent), var(--accent-alt))',
+                  transformOrigin: 'bottom',
+                  animationDuration: `${0.5 + i * 0.08}s`,
+                  animationDelay: `${i * 0.05}s`,
+                }} />
+            ))}
+          </div>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Loading PlayLy…</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) return <LandingPage />
+  return <SearchPage />
 }

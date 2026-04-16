@@ -9,10 +9,17 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
     nginx.ingress.kubernetes.io/enable-cors: "true"
+    # SSL redirect OFF until cert is issued
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
 spec:
   ingressClassName: nginx
+  tls:
+  - hosts:
+    - playly.online
+    - www.playly.online
+    secretName: playly-tls
   rules:
-  # --- playly.online ---
   - host: playly.online
     http:
       paths:
@@ -30,7 +37,6 @@ spec:
             name: playly-frontend-svc
             port:
               number: 80
-  # --- www.playly.online ---
   - host: www.playly.online
     http:
       paths:
@@ -48,10 +54,7 @@ spec:
             name: playly-frontend-svc
             port:
               number: 80
-  # --- NO HOST (catch-all) ---
-  # Azure LB health probe sends requests WITHOUT a Host header.
-  # Without this rule, nginx returns 404 → LB marks backend unhealthy → blocks ALL traffic.
-  # This rule makes the health probe get a 200 → LB stays healthy → traffic flows.
+  # Azure LB health probe catch-all (no host)
   - http:
       paths:
       - path: /api(/|$)(.*)
@@ -63,6 +66,43 @@ spec:
               number: 80
       - path: /()(.*)
         pathType: ImplementationSpecific
+        backend:
+          service:
+            name: playly-frontend-svc
+            port:
+              number: 80
+---
+# Separate ingress for ACME challenge — NO rewrite-target
+# cert-manager's http01-edit-in-place doesn't work with rewrite-target
+# because the challenge path gets rewritten. This ingress handles the
+# /.well-known/ path WITHOUT rewriting, so the solver pod gets the correct request.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: playly-acme-solver
+  namespace: playly
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    acme.cert-manager.io/http01-edit-in-place: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: playly.online
+    http:
+      paths:
+      - path: /.well-known/acme-challenge
+        pathType: Prefix
+        backend:
+          service:
+            name: playly-frontend-svc
+            port:
+              number: 80
+  - host: www.playly.online
+    http:
+      paths:
+      - path: /.well-known/acme-challenge
+        pathType: Prefix
         backend:
           service:
             name: playly-frontend-svc
