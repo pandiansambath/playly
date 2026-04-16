@@ -299,7 +299,7 @@ function SearchPage() {
   const [done,         setDone]         = useState<Set<string>>(new Set())
   const [error,        setError]        = useState('')
   const setCurrentSong = usePlayerStore(s => s.setCurrentSong)
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)

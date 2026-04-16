@@ -43,7 +43,7 @@ function resumeCtx() {
 // ═══════════════════════════════════════════════════════════
 function EqCanvas({ isPlaying, accentColor }: { isPlaying: boolean; accentColor: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const rafRef    = useRef<number>()
+  const rafRef    = useRef<number>(0)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -102,7 +102,7 @@ function EqCanvas({ isPlaying, accentColor }: { isPlaying: boolean; accentColor:
 // ═══════════════════════════════════════════════════════════
 function MagicCanvas({ accentColor }: { accentColor: string }) {
   const canvasRef  = useRef<HTMLCanvasElement>(null)
-  const rafRef     = useRef<number>()
+  const rafRef     = useRef<number>(0)
   const prevEnergy = useRef(0)
   const beatTime   = useRef(0)
   const hueShift   = useRef(0)
@@ -112,9 +112,10 @@ function MagicCanvas({ accentColor }: { accentColor: string }) {
     if (!canvas) return
     const ctx = canvas.getContext('2d')!
 
+    const el = canvas  // capture non-null ref for closure
     function resize() {
-      canvas.width  = canvas.offsetWidth
-      canvas.height = canvas.offsetHeight
+      el.width  = el.offsetWidth
+      el.height = el.offsetHeight
     }
     resize()
     window.addEventListener('resize', resize)
@@ -123,10 +124,10 @@ function MagicCanvas({ accentColor }: { accentColor: string }) {
     const bufLen   = analyser?.frequencyBinCount ?? 128
     const dataArr  = analyser ? new Uint8Array(bufLen) : null
 
-    // Particles
+    // Particles — use 'el' (non-null captured ref) not 'canvas'
     const particles = Array.from({ length: 70 }, (_, i) => ({
-      x:  Math.random() * canvas.width,
-      y:  Math.random() * canvas.height,
+      x:  Math.random() * el.width,
+      y:  Math.random() * el.height,
       vx: (Math.random() - 0.5) * 1.2,
       vy: (Math.random() - 0.5) * 1.2,
       r:  4 + Math.random() * 18,
@@ -137,8 +138,8 @@ function MagicCanvas({ accentColor }: { accentColor: string }) {
 
     function draw() {
       rafRef.current = requestAnimationFrame(draw)
-      const W = canvas.width
-      const H = canvas.height
+      const W = el.width
+      const H = el.height
       if (!W || !H) return
 
       if (analyser && dataArr) analyser.getByteFrequencyData(dataArr)
