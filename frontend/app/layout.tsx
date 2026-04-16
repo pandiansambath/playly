@@ -3,6 +3,8 @@ import './globals.css'
 import { Navbar } from '@/components/Navbar'
 import { Player } from '@/components/Player'
 import { AuthProvider } from '@/components/AuthProvider'
+import { AuthGuard } from '@/components/AuthGuard'
+import { ToastContainer } from '@/components/Toast'
 import { DynamicBackground } from '@/components/DynamicBackground'
 import { LibraryPreloader } from '@/components/LibraryPreloader'
 import { ThemeProvider } from '@/components/ThemeProvider'
@@ -41,14 +43,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <AuthProvider>
             <DynamicBackground />
             <LibraryPreloader />
-            <div className="relative z-10 flex flex-col min-h-screen">
-              <Navbar />
-              {/* pb-24 = player bar; pb-36 on mobile = player + bottom tabs */}
-              <main className="flex-1 pb-24 md:pb-24" style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom))' }}>
-                {children}
-              </main>
-              <Player />
-            </div>
+            <ToastContainer />
+            <AuthGuard>
+              <div className="relative z-10 flex flex-col min-h-screen">
+                <Navbar />
+                {/* pb-24 = player bar; pb-36 on mobile = player + bottom tabs */}
+                <main className="flex-1 pb-24 md:pb-24" style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom))' }}>
+                  {children}
+                </main>
+                <Player />
+              </div>
+            </AuthGuard>
           </AuthProvider>
         </ThemeProvider>
         <script dangerouslySetInnerHTML={{ __html: `

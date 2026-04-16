@@ -5,6 +5,7 @@ import { Play, Heart, MoreHorizontal, ListPlus, Trash2, Music, Download, Loader2
 import { Song } from '@/lib/supabase'
 import { usePlayerStore } from '@/store/playerStore'
 import { api } from '@/lib/api'
+import { showToast } from '@/components/Toast'
 
 function EqBars({ playing }: { playing: boolean }) {
   return (
@@ -81,10 +82,13 @@ export function SongCard({ song, queue = [], queueSource = '', isFavorite = fals
     }
   }
 
-  async function addToPlaylist(pid: string) {
+  async function addToPlaylist(pid: string, plName: string) {
     try {
       await api.addToPlaylist(pid, song.id)
-    } catch {}
+      showToast(`Added to "${plName}" ✓`)
+    } catch {
+      showToast('Failed to add to playlist', false)
+    }
     setShowMenu(false)
     setMenuAnchor(null)
   }
@@ -215,7 +219,7 @@ export function SongCard({ song, queue = [], queueSource = '', isFavorite = fals
           {playlists.length === 0 ? (
             <div className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>No playlists yet</div>
           ) : playlists.map((pl: any) => (
-            <button key={pl.id} onClick={() => addToPlaylist(pl.id)}
+            <button key={pl.id} onClick={() => addToPlaylist(pl.id, pl.name)}
               className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-left transition-all hover:bg-white/5"
               style={{ color: 'var(--text-primary)' }}>
               <div className="w-6 h-6 rounded-lg flex items-center justify-center"

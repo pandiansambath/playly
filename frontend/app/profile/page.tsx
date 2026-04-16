@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   User, Camera, Save, Music, Heart, ListMusic,
   LogOut, Trash2, ChevronRight, Check, CheckCircle2,
@@ -42,6 +43,7 @@ export default function ProfilePage() {
   const { user } = useAuth()
   const clearPlayer = usePlayerStore(s => s.clearPlayer)
   const { theme, setTheme } = useTheme()
+  const router = useRouter()
 
   const [profile,   setProfile]   = useState<any>(null)
   const [loading,   setLoading]   = useState(true)
@@ -95,8 +97,9 @@ export default function ProfilePage() {
       const path = `${user.id}.${ext}`
       await supabase.storage.from('avatars').upload(path, file, { upsert: true })
       const { data } = supabase.storage.from('avatars').getPublicUrl(path)
-      await supabase.from('users').update({ avatar_url: data.publicUrl }).eq('id', user.id)
-      setProfile((p: any) => ({ ...p, avatar_url: data.publicUrl }))
+      const freshUrl = `${data.publicUrl}?t=${Date.now()}`
+      await supabase.from('users').update({ avatar_url: freshUrl }).eq('id', user.id)
+      setProfile((p: any) => ({ ...p, avatar_url: freshUrl }))
       showToast('Avatar updated!', true)
     } catch {
       showToast('Upload failed — try a smaller image', false)
@@ -112,6 +115,7 @@ export default function ProfilePage() {
   async function signOut() {
     await supabase.auth.signOut()
     clearPlayer()
+    router.replace('/')
   }
 
   if (!user) return (

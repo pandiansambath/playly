@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { usePlayerStore, getAudio } from '@/store/playerStore'
 import { formatDuration } from '@/lib/supabase'
-import { api, downloadVideoFile } from '@/lib/api'
+import { api } from '@/lib/api'
 
 // ═══════════════════════════════════════════════════════════
 // WEB AUDIO ANALYSER — Module-level singleton
@@ -144,33 +144,36 @@ function MagicCanvas({ accentColor }: { accentColor: string }) {
 
       if (analyser && dataArr) analyser.getByteFrequencyData(dataArr)
 
-      // Beat detection
-      const bassSum = dataArr ? (dataArr[1] + dataArr[2] + dataArr[3] + dataArr[4]) / (4 * 255) : 0.2
-      const midSum  = dataArr ? (dataArr[10] + dataArr[15] + dataArr[20]) / (3 * 255) : 0.15
-      const energy  = bassSum * 0.65 + midSum * 0.35
+      // Beat detection — LOW thresholds so even light beats trigger
+      const bassSum = dataArr ? (dataArr[1] + dataArr[2] + dataArr[3] + dataArr[4] + dataArr[5]) / (5 * 255) : 0.15
+      const midSum  = dataArr ? (dataArr[8] + dataArr[12] + dataArr[18]) / (3 * 255) : 0.10
+      const energy  = bassSum * 0.7 + midSum * 0.3
       const now     = performance.now()
-      const isBeat  = energy > prevEnergy.current * 1.35 && energy > 0.25 && now - beatTime.current > 250
+      // Trigger on ANY energy spike >= 12% above running average, min 120ms apart
+      const isBeat  = energy > prevEnergy.current * 1.12 && energy > 0.06 && now - beatTime.current > 120
       if (isBeat) beatTime.current = now
-      prevEnergy.current = energy * 0.7 + prevEnergy.current * 0.3
-      hueShift.current   = (hueShift.current + 0.4 + energy * 1.5) % 360
+      prevEnergy.current = energy * 0.65 + prevEnergy.current * 0.35
+      hueShift.current   = (hueShift.current + 0.6 + energy * 3) % 360
 
-      // Fade trail
-      ctx.fillStyle = `rgba(5,5,18,${0.18 + energy * 0.12})`
+      // Fade trail — faster fade on beats for crisp flash, slower otherwise
+      ctx.fillStyle = `rgba(5,5,18,${isBeat ? 0.35 : 0.14 + energy * 0.1})`
       ctx.fillRect(0, 0, W, H)
 
       const cx = W / 2
       const cy = H / 2
 
-      // Layer 1: Circular frequency bars
+      // Layer 1: Circular frequency bars — longer on beat
       if (dataArr) {
-        const BARS = 64
-        const baseR = Math.min(cx, cy) * 0.3
+        const BARS   = 72
+        const beatMult = isBeat ? 1.8 : 1
+        const baseR  = Math.min(cx, cy) * 0.28
+        const maxLen = Math.min(cx, cy) * 0.55 * beatMult
         for (let i = 0; i < BARS; i++) {
-          const bin  = Math.floor(i * (bufLen * 0.6) / BARS) + 1
-          const v    = dataArr[bin] / 255
+          const bin   = Math.floor(i * (bufLen * 0.65) / BARS) + 1
+          const v     = dataArr[bin] / 255
           const angle = (i / BARS) * Math.PI * 2 - Math.PI / 2
-          const len  = 8 + v * Math.min(cx, cy) * 0.38
-          const hue  = (hueShift.current + i * 5.6) % 360
+          const len   = (6 + v * maxLen) * (1 + energy * 0.4)
+          const hue   = (hueShift.current + i * 5) % 360
           const x1 = cx + Math.cos(angle) * baseR
           const y1 = cy + Math.sin(angle) * baseR
           const x2 = cx + Math.cos(angle) * (baseR + len)
@@ -178,71 +181,73 @@ function MagicCanvas({ accentColor }: { accentColor: string }) {
           ctx.beginPath()
           ctx.moveTo(x1, y1)
           ctx.lineTo(x2, y2)
-          ctx.strokeStyle = `hsla(${hue},100%,70%,${0.3 + v * 0.7})`
-          ctx.lineWidth   = 2 + v * 3
+          ctx.strokeStyle = `hsla(${hue},100%,${60 + v * 30}%,${0.25 + v * 0.75})`
+          ctx.lineWidth   = isBeat ? 3 + v * 4 : 1.5 + v * 2.5
           ctx.lineCap     = 'round'
           ctx.stroke()
         }
       }
 
-      // Layer 2: Center glow circle — beats with bass
-      const glowR = Math.min(cx, cy) * (0.12 + bassSum * 0.18)
+      // Layer 2: Center glow — breathes with every energy change, PULSES on beat
+      const glowMult = isBeat ? 2.2 : 1
+      const glowR = Math.min(cx, cy) * (0.10 + bassSum * 0.25 * glowMult)
       const gGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR)
-      gGlow.addColorStop(0,   `hsla(${hueShift.current},100%,80%,${0.5 + bassSum * 0.5})`)
-      gGlow.addColorStop(0.5, `hsla(${(hueShift.current + 60) % 360},100%,60%,${0.2 + bassSum * 0.3})`)
+      gGlow.addColorStop(0,   `hsla(${hueShift.current},100%,90%,${isBeat ? 0.95 : 0.5 + bassSum * 0.4})`)
+      gGlow.addColorStop(0.4, `hsla(${(hueShift.current + 40) % 360},100%,65%,${0.3 + bassSum * 0.4})`)
       gGlow.addColorStop(1,   'transparent')
       ctx.beginPath(); ctx.arc(cx, cy, glowR, 0, Math.PI * 2)
       ctx.fillStyle = gGlow; ctx.fill()
 
-      // Beat flash ring
+      // Beat shockwave ring — expands outward
       if (isBeat) {
-        const beatR = Math.min(cx, cy) * 0.5
-        const gBeat = ctx.createRadialGradient(cx, cy, beatR * 0.8, cx, cy, beatR)
-        gBeat.addColorStop(0, 'transparent')
-        gBeat.addColorStop(0.5, `hsla(${hueShift.current},100%,80%,0.5)`)
-        gBeat.addColorStop(1, 'transparent')
-        ctx.beginPath(); ctx.arc(cx, cy, beatR, 0, Math.PI * 2)
-        ctx.fillStyle = gBeat; ctx.fill()
+        for (let ring = 0; ring < 2; ring++) {
+          const beatR = Math.min(cx, cy) * (0.38 + ring * 0.22)
+          const gBeat = ctx.createRadialGradient(cx, cy, beatR * 0.75, cx, cy, beatR)
+          gBeat.addColorStop(0, 'transparent')
+          gBeat.addColorStop(0.5, `hsla(${(hueShift.current + ring * 90) % 360},100%,85%,${0.7 - ring * 0.2})`)
+          gBeat.addColorStop(1, 'transparent')
+          ctx.beginPath(); ctx.arc(cx, cy, beatR, 0, Math.PI * 2)
+          ctx.fillStyle = gBeat; ctx.fill()
+        }
       }
 
-      // Layer 3: Floating particles
+      // Layer 3: Floating particles — more speed, bigger on every beat
       particles.forEach(p => {
-        const freq = dataArr ? dataArr[p.freqI] / 255 : 0.25
-        const speed = 1 + energy * 2
+        const freq  = dataArr ? dataArr[p.freqI] / 255 : 0.2
+        const speed = (1.2 + energy * 3.5) * (isBeat ? 2 : 1)
         p.x += p.vx * speed
         p.y += p.vy * speed
-        p.hue = (p.hue + 0.5 + freq * 2) % 360
-        p.life = (p.life + 0.002) % 1
+        p.hue  = (p.hue + 1 + freq * 3) % 360
+        p.life = (p.life + 0.003 + energy * 0.004) % 1
 
-        // Wrap around edges
-        if (p.x < 0) p.x = W; if (p.x > W) p.x = 0
-        if (p.y < 0) p.y = H; if (p.y > H) p.y = 0
+        if (p.x < -20) p.x = W + 20; if (p.x > W + 20) p.x = -20
+        if (p.y < -20) p.y = H + 20; if (p.y > H + 20) p.y = -20
 
-        const r    = p.r * (0.5 + freq * 1.2) * (isBeat ? 1.4 : 1)
+        const r    = p.r * (0.6 + freq * 1.6) * (isBeat ? 1.8 : 1)
         const life = Math.sin(p.life * Math.PI)
         const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r)
-        g.addColorStop(0,   `hsla(${p.hue},100%,75%,${(0.4 + freq * 0.5) * life})`)
-        g.addColorStop(0.6, `hsla(${p.hue + 30},100%,55%,${(0.15 + freq * 0.2) * life})`)
+        g.addColorStop(0,   `hsla(${p.hue},100%,82%,${Math.min(0.92, (0.5 + freq * 0.5) * life)})`)
+        g.addColorStop(0.55,`hsla(${p.hue + 40},90%,60%,${(0.2 + freq * 0.3) * life})`)
         g.addColorStop(1,   'transparent')
         ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
         ctx.fillStyle = g; ctx.fill()
       })
 
-      // Layer 4: Aurora wave ribbons at top & bottom
-      const wavePoints = 8
-      const amp = H * 0.06 * (1 + energy * 2)
+      // Layer 4: Aurora wave ribbons — amplitude reacts to energy AND beats
+      const wavePoints = 10
+      const amp = H * 0.09 * (1 + energy * 3.5) * (isBeat ? 1.6 : 1)
       for (let wave = 0; wave < 3; wave++) {
-        const hue = (hueShift.current + wave * 60) % 360
-        const yBase = wave === 0 ? H * 0.1 : wave === 1 ? H * 0.9 : H * 0.5
+        const hue = (hueShift.current + wave * 70) % 360
+        const yBase = wave === 0 ? H * 0.08 : wave === 1 ? H * 0.92 : H * 0.5
         ctx.beginPath()
         for (let i = 0; i <= wavePoints; i++) {
           const x = (i / wavePoints) * W
-          const freq = dataArr ? dataArr[Math.floor(i * bufLen * 0.5 / wavePoints)] / 255 : 0.2
-          const y = yBase + Math.sin(i * 0.8 + now * 0.001 * (wave + 1)) * amp * (1 + freq)
+          const freq = dataArr ? dataArr[Math.floor(i * bufLen * 0.55 / wavePoints)] / 255 : 0.2
+          const y = yBase + Math.sin(i * 0.9 + now * 0.0015 * (wave + 1)) * amp * (1 + freq * 1.2)
           i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
         }
-        ctx.strokeStyle = `hsla(${hue},90%,65%,${0.12 + energy * 0.18})`
-        ctx.lineWidth = 2 + wave
+        ctx.strokeStyle = `hsla(${hue},100%,70%,${isBeat ? 0.6 : 0.18 + energy * 0.35})`
+        ctx.lineWidth = isBeat ? 4 + wave : 2 + wave
         ctx.stroke()
       }
     }
@@ -308,8 +313,6 @@ function SeekBar({
 function DownloadSection({ accentColor }: { accentColor: string }) {
   const { currentSong } = usePlayerStore()
   const [dlAudio, setDlAudio] = useState<'idle' | 'loading' | 'done'>('idle')
-  const [dlVideo, setDlVideo] = useState<'idle' | 'loading' | 'done'>('idle')
-  const [vidPct,  setVidPct]  = useState(0)
 
   async function handleAudioDl() {
     if (!currentSong || dlAudio !== 'idle') return
@@ -328,14 +331,10 @@ function DownloadSection({ accentColor }: { accentColor: string }) {
     } catch { setDlAudio('idle') }
   }
 
-  async function handleVideoDl() {
-    if (!currentSong || dlVideo !== 'idle') return
-    setDlVideo('loading'); setVidPct(0)
-    try {
-      await downloadVideoFile(currentSong.youtube_id, currentSong.title, '720p', pct => setVidPct(pct))
-      setDlVideo('done')
-      setTimeout(() => setDlVideo('idle'), 4000)
-    } catch { setDlVideo('idle') }
+  function handleVideoDl() {
+    if (!currentSong) return
+    // Open YouTube — browser can save via right-click or extension
+    window.open(`https://www.youtube.com/watch?v=${currentSong.youtube_id}`, '_blank', 'noopener')
   }
 
   return (
@@ -354,22 +353,17 @@ function DownloadSection({ accentColor }: { accentColor: string }) {
         MP3
       </button>
 
-      {/* Video download */}
-      <button onClick={handleVideoDl} disabled={dlVideo === 'loading'}
-        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl text-xs font-bold transition-all hover:scale-105 active:scale-95 disabled:opacity-60 relative overflow-hidden"
+      {/* Open on YouTube */}
+      <button onClick={handleVideoDl}
+        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl text-xs font-bold transition-all hover:scale-105 active:scale-95"
         style={{
-          background: dlVideo === 'done' ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.07)',
-          border: `1px solid ${dlVideo === 'done' ? 'rgba(16,185,129,0.35)' : 'rgba(255,255,255,0.12)'}`,
-          color: dlVideo === 'done' ? '#10b981' : 'rgba(255,255,255,0.65)',
-        }}>
-        {dlVideo === 'loading' && (
-          <div className="absolute inset-0 bg-accent opacity-20 transition-all"
-            style={{ width: `${vidPct}%`, background: `rgba(${accentColor},0.2)` }} />
-        )}
-        {dlVideo === 'loading' ? <Loader2 size={13} className="animate-spin" />
-          : dlVideo === 'done'   ? <Check size={13} />
-          : <MonitorPlay size={13} />}
-        <span>{dlVideo === 'loading' ? `${vidPct}%` : 'VIDEO'}</span>
+          background: 'rgba(255,50,50,0.10)',
+          border: '1px solid rgba(255,50,50,0.22)',
+          color: 'rgba(255,180,180,0.9)',
+        }}
+        title="Opens YouTube — use your browser or an extension to save">
+        <MonitorPlay size={13} />
+        <span>YouTube ↗</span>
       </button>
     </div>
   )
@@ -649,16 +643,25 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
                   />
                 </div>
               ) : (
-                // Album art (audio mode)
-                <div className="relative w-full h-full">
+                // Album art (audio mode) — contain so YT 16:9 thumbs are never cropped
+                <div className="relative w-full h-full overflow-hidden">
+                  {/* Blurred background fills the letterbox gaps */}
+                  <img src={currentSong.thumbnail_url} alt=""
+                    style={{
+                      position: 'absolute', inset: 0, width: '100%', height: '100%',
+                      objectFit: 'cover',
+                      filter: 'blur(18px) brightness(0.55) saturate(1.4)',
+                      transform: 'scale(1.12)',
+                    }} />
+                  {/* Actual thumbnail — fully visible, no crop */}
                   <img src={currentSong.thumbnail_url} alt={currentSong.title}
-                    className="w-full h-full object-cover" />
+                    style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%', objectFit: 'contain' }} />
                   {isPlaying && (
-                    <div className="absolute inset-0 glow-pulse pointer-events-none"
-                      style={{ background: `radial-gradient(circle at center, rgba(${accentColor},0.2), transparent 70%)` }} />
+                    <div className="absolute inset-0 glow-pulse pointer-events-none" style={{ zIndex: 2,
+                      background: `radial-gradient(circle at center, rgba(${accentColor},0.18), transparent 70%)` }} />
                   )}
                   {!isPlaying && !buffering && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/25" style={{ zIndex: 2 }}>
                       <div className="w-14 h-14 rounded-full flex items-center justify-center"
                         style={{ background: `rgba(${accentColor},0.9)` }}>
                         <Play size={24} fill="white" className="ml-1 text-white" />

@@ -105,7 +105,7 @@ export function Navbar() {
             <span>Profile</span>
           </Link>
           <button
-            onClick={() => { supabase.auth.signOut(); clearPlayer() }}
+            onClick={async () => { await supabase.auth.signOut(); clearPlayer(); router.replace('/') }}
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200"
             style={{ color: 'var(--text-muted)' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; (e.currentTarget as HTMLElement).style.background = 'var(--bg-raised)' }}

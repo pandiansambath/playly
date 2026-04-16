@@ -249,9 +249,35 @@ function LandingPage() {
         </div>
       </div>
 
-      {/* ─── Subtle easter egg link — developer page ─── */}
-      <Link href="/developer" className="dev-egg-link">
-        made with ♪
+      {/* Developer page — subtle but findable avatar badge bottom-right */}
+      <Link href="/developer"
+        style={{
+          position: 'absolute', bottom: 18, right: 18,
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '6px 10px 6px 6px',
+          borderRadius: 99,
+          background: 'rgba(139,92,246,0.10)',
+          border: '1px solid rgba(139,92,246,0.25)',
+          backdropFilter: 'blur(10px)',
+          textDecoration: 'none',
+          opacity: 0.7,
+          transition: 'opacity 0.25s, transform 0.25s',
+          cursor: 'pointer',
+          zIndex: 20,
+        }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; (e.currentTarget as HTMLElement).style.transform = 'scale(1.05)' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '0.7'; (e.currentTarget as HTMLElement).style.transform = 'scale(1)' }}>
+        <div style={{
+          width: 26, height: 26, borderRadius: '50%',
+          background: 'linear-gradient(135deg,#8B5CF6,#EC4899)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 11, fontWeight: 900, color: 'white',
+          boxShadow: '0 0 10px rgba(139,92,246,0.5)',
+          flexShrink: 0,
+        }}>PS</div>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap' }}>
+          built by Pandian ✦
+        </span>
       </Link>
     </div>
   )
