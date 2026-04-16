@@ -1,0 +1,21 @@
+node_modules/
+.next/
+.env
+.env.example
+.env.local
+.env.local.example
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+dist/
+build/
+.zip
+
+# Terraform — never commit state or secret var files
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
+terraform/terraform.tfvars

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: playly-config
+  namespace: playly
+data:
+  # Frontend connects to backend via the Ingress path /api
+  NEXT_PUBLIC_API_URL: "/api"
+
+  # Supabase public URL — safe to be in ConfigMap (not a secret)
+  NEXT_PUBLIC_SUPABASE_URL: "https://koagwifcrrkojeowevqn.supabase.co"
+
+  # Real LoadBalancer IP from Azure NGINX Ingress — using nip.io free domain
+  # (Google OAuth requires a real domain, not a raw IP)
+  FRONTEND_URL: "http://52.140.58.38.nip.io"
+

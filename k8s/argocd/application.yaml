@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: playly
+  namespace: argocd
+  # Cascade delete removes all K8s resources if this ArgoCD app is deleted
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/pandiansambath/playly
+    targetRevision: main
+    # ArgoCD watches this folder for YAML changes
+    path: k8s
+
+  destination:
+    # Deploy into the same cluster ArgoCD is running in
+    server: https://kubernetes.default.svc
+    namespace: playly
+
+  syncPolicy:
+    automated:
+      # Delete resources that are removed from GitHub
+      prune: true
+      # Fix manual changes made directly to cluster (enforce Git as source of truth)
+      selfHeal: true
+    syncOptions:
+    # Create namespace if it doesn't exist
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

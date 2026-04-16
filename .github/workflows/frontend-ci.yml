@@ -1,0 +1,79 @@
+name: Frontend CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+
+env:
+  ACR_NAME: playlyacr
+  IMAGE: frontend
+
+jobs:
+  build-and-deploy:
+    name: Build, Push & Update K8s Tag
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # to commit updated k8s YAML back to repo
+      id-token: write   # to request OIDC JWT for Azure login (no static keys!)
+
+    steps:
+    # ── Step 1: Checkout ─────────────────────────────────────────────────────
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # ── Step 2: Login to Azure via OIDC (no passwords — uses federated identity) ──
+    - name: Login to Azure
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    # ── Step 3: Login to Azure Container Registry ─────────────────────────────
+    - name: Login to ACR
+      run: az acr login --name ${{ env.ACR_NAME }}
+
+    # ── Step 4: Build Docker image with Next.js build-time env vars ───────────
+    # Next.js bakes NEXT_PUBLIC_* into the bundle at build time, not runtime
+    # So we inject them here as Docker build args → baked into the image
+    - name: Build Docker image
+      run: |
+        docker build \
+          --build-arg NEXT_PUBLIC_API_URL="/api" \
+          --build-arg NEXT_PUBLIC_SUPABASE_URL="${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" \
+          --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" \
+          -t ${{ env.ACR_NAME }}.azurecr.io/playly/${{ env.IMAGE }}:${{ github.sha }} \
+          -t ${{ env.ACR_NAME }}.azurecr.io/playly/${{ env.IMAGE }}:latest \
+          ./frontend
+
+    # ── Step 5: Push to ACR ──────────────────────────────────────────────────
+    - name: Push to ACR
+      run: |
+        docker push ${{ env.ACR_NAME }}.azurecr.io/playly/${{ env.IMAGE }}:${{ github.sha }}
+        docker push ${{ env.ACR_NAME }}.azurecr.io/playly/${{ env.IMAGE }}:latest
+
+    # ── Step 6: Update image tag in K8s manifest ──────────────────────────────
+    - name: Update image tag in K8s manifest
+      run: |
+        sed -i "s|${{ env.ACR_NAME }}.azurecr.io/playly/${{ env.IMAGE }}:.*|${{ env.ACR_NAME }}.azurecr.io/playly/${{ env.IMAGE }}:${{ github.sha }}|g" \
+          k8s/frontend-deployment.yaml
+
+        echo "Updated image tag:"
+        grep "image:" k8s/frontend-deployment.yaml
+
+    # ── Step 7: Commit updated YAML → ArgoCD picks it up ─────────────────────
+    - name: Commit updated K8s manifest
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add k8s/frontend-deployment.yaml
+        git diff --staged --quiet || git commit -m "ci: update frontend image to ${{ github.sha }} [skip ci]"
+        git pull --rebase origin main
+        git push

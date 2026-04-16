@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: playly-backend
+  namespace: playly
+  labels:
+    app: playly-backend
+    version: "1.0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: playly-backend
+  template:
+    metadata:
+      labels:
+        app: playly-backend
+    spec:
+      containers:
+      - name: backend
+        # Image tag is auto-updated by GitHub Actions CI/CD on every push
+        # ACR URL format: <acr-name>.azurecr.io/<repo>/<image>:<tag>
+        image: playlyacr.azurecr.io/playly/backend:latest
+        ports:
+        - containerPort: 8000
+
+        # Inject secrets as environment variables (never hardcode)
+        envFrom:
+        - secretRef:
+            name: playly-secrets
+        - configMapRef:
+            name: playly-config
+
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+        # Health checks — Kubernetes restarts pod if these fail
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
