@@ -51,12 +51,7 @@ export function Navbar() {
   const clearPlayer = usePlayerStore(s => s.clearPlayer)
   const onProfile   = path === '/profile'
 
-  if (!user) return (
-    <nav className="sticky top-0 z-50 px-6 py-4 flex items-center"
-      style={{ background: 'transparent' }}>
-      <PlayLyLogo />
-    </nav>
-  )
+  if (!user) return null
 
   return (
     <>
