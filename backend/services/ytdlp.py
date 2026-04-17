@@ -1,21 +1,28 @@
 import yt_dlp
 import os
 import tempfile
+import shutil
 from pathlib import Path
 
 SKIP_SSL = os.getenv("SKIP_SSL_VERIFY", "false").lower() == "true"
 
 # Optional: mount a YouTube cookies file as a K8s secret
-# Steps: 1) Export cookies from browser using "Get cookies.txt LOCALLY" extension
-#         2) kubectl create secret generic youtube-cookies --from-file=cookies.txt=./cookies.txt
-#         3) Add volumeMount to backend deployment: mountPath: /etc/yt-cookies/cookies.txt
 # Then set: YOUTUBE_COOKIE_FILE=/etc/yt-cookies/cookies.txt
 COOKIE_FILE = os.getenv("YOUTUBE_COOKIE_FILE", "")
 
+def get_writable_cookie_file():
+    """Kubernetes secrets are read-only, but yt-dlp wants to write to the cookie file.
+    Copy it to /tmp to prevent OSError."""
+    if not COOKIE_FILE or not os.path.exists(COOKIE_FILE):
+        return ""
+    dest = "/tmp/yt_cookies_writable.txt"
+    try:
+        shutil.copy(COOKIE_FILE, dest)
+        return dest
+    except Exception:
+        return COOKIE_FILE
+
 # Ordered list of player clients to try — each bypasses bot detection differently
-# tv_embedded: YouTube TV client, usually not bot-checked
-# android_creator: YouTube Studio client, different fingerprint  
-# mweb: mobile web, lighter bot detection
 PLAYER_CLIENTS = [
     ["tv_embedded"],
     ["android_creator"],
@@ -23,7 +30,6 @@ PLAYER_CLIENTS = [
     ["android"],
     ["web"],
 ]
-
 
 def _build_opts(quality: str, tmp: str, player_clients: list) -> dict:
     opts = {
@@ -45,18 +51,15 @@ def _build_opts(quality: str, tmp: str, player_clients: list) -> dict:
         "age_limit": 99,
         "retries": 2,
     }
-    # Use cookie file if provided — the most reliable fix for bot detection
-    if COOKIE_FILE and os.path.exists(COOKIE_FILE):
-        opts["cookiefile"] = COOKIE_FILE
+    # Use cookie file if provided
+    writable_cookies = get_writable_cookie_file()
+    if writable_cookies:
+        opts["cookiefile"] = writable_cookies
     return opts
 
 
 async def download_audio(youtube_id: str, quality: str = "192"):
-    """Download YouTube audio as MP3.
-    
-    Tries multiple player clients in sequence to bypass YouTube bot detection.
-    For fully protected videos, set YOUTUBE_COOKIE_FILE env var to a cookies.txt path.
-    """
+    """Download YouTube audio as MP3."""
     url = f"https://www.youtube.com/watch?v={youtube_id}"
     last_error = None
 
@@ -74,9 +77,8 @@ async def download_audio(youtube_id: str, quality: str = "192"):
             except Exception as e:
                 last_error = e
                 err_str = str(e).lower()
-                # If it's a bot/auth error, try next client
-                # If it's a network/format error, stop trying
-                if "sign in" in err_str or "bot" in err_str or "confirm" in err_str:
+                # If it's a bot/auth error OR a format isn't available for this specific client (like shorts on tv_embedded), try next
+                if "sign in" in err_str or "bot" in err_str or "confirm" in err_str or "format is not available" in err_str or "read-only" in err_str:
                     continue
                 # For other errors (private video, removed, etc.), fail fast
                 raise
@@ -85,9 +87,7 @@ async def download_audio(youtube_id: str, quality: str = "192"):
     err_msg = str(last_error) if last_error else "All download strategies failed"
     if "sign in" in err_msg.lower() or "bot" in err_msg.lower():
         raise RuntimeError(
-            "This video requires YouTube authentication. "
-            "Ask your admin to set YOUTUBE_COOKIE_FILE in the backend pod. "
-            "See: https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"
+            "This video requires YouTube authentication or is blocking the bot."
         )
     raise last_error or RuntimeError("Download failed")
 
@@ -102,7 +102,9 @@ async def get_video_info(youtube_id: str) -> dict:
         "nocheckcertificate": SKIP_SSL,
         "extractor_args": {"youtube": {"player_client": ["tv_embedded"]}},
     }
-    if COOKIE_FILE and os.path.exists(COOKIE_FILE):
-        opts["cookiefile"] = COOKIE_FILE
+    writable_cookies = get_writable_cookie_file()
+    if writable_cookies:
+        opts["cookiefile"] = writable_cookies
+        
     with yt_dlp.YoutubeDL(opts) as ydl:
         return ydl.extract_info(url, download=False)
