@@ -43,6 +43,7 @@ def _build_opts(quality: str, tmp: str, player_clients: list) -> dict:
         "quiet": True,
         "no_warnings": True,
         "nocheckcertificate": SKIP_SSL,
+        "js_runtimes": {"node": {}},
         "extractor_args": {
             "youtube": {
                 "player_client": player_clients,

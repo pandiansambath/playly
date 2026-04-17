@@ -3,6 +3,6 @@ uvicorn[standard]
 python-dotenv
 supabase
 httpx
-yt-dlp
+yt-dlp[default]
 python-multipart
 pydantic
