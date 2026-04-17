@@ -5,9 +5,10 @@ import {
   Clock, Play, BookOpen, LayoutGrid, Heart,
 } from 'lucide-react'
 import Link from 'next/link'
-import { api } from '@/lib/api'
+import { api, invalidateCache } from '@/lib/api'
 import { SearchResult, YTResult } from '@/components/SearchResult'
 import { useAuth } from '@/components/AuthProvider'
+import { showToast } from '@/components/Toast'
 import { supabase } from '@/lib/supabase'
 import { usePlayerStore } from '@/store/playerStore'
 import { Song } from '@/lib/supabase'
@@ -427,9 +428,10 @@ function SearchPage() {
   const [query,        setQuery]        = useState('')
   const [results,      setResults]      = useState<YTResult[]>([])
   const [searching,    setSearching]    = useState(false)
-  const [downloading,  setDownloading]  = useState<Set<string>>(new Set())
-  const [done,         setDone]         = useState<Set<string>>(new Set())
-  const [error,        setError]        = useState('')
+  const [downloading,    setDownloading]    = useState<Set<string>>(new Set())
+  const [done,           setDone]           = useState<Set<string>>(new Set())
+  const [downloadedSongs, setDownloadedSongs] = useState<Map<string, Song>>(new Map())
+  const [error,          setError]          = useState('')
   const setCurrentSong = usePlayerStore(s => s.setCurrentSong)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -453,15 +455,22 @@ function SearchPage() {
     if (downloading.has(r.youtube_id)) return
     setDownloading(d => new Set([...d, r.youtube_id]))
     try {
-      await api.download(r.youtube_id)
+      const result = await api.download(r.youtube_id)
+      // Store the real song data (with supabase_url) for immediate playback
+      if (result?.song) {
+        setDownloadedSongs(prev => new Map(prev).set(r.youtube_id, result.song))
+      }
       setDone(d => new Set([...d, r.youtube_id]))
-    } catch {}
-    finally { setDownloading(d => { const s = new Set(d); s.delete(r.youtube_id); return s }) }
+      showToast('Added to library ✓')
+    } catch (e: any) {
+      showToast(e?.message || 'Download failed. Try again.', false)
+    } finally { setDownloading(d => { const s = new Set(d); s.delete(r.youtube_id); return s }) }
   }
 
   function handlePlay(r: YTResult) {
-    // Create a minimal Song object for immediate playback from search
-    const song: Song = {
+    // Use the real song data (with supabase_url) if we downloaded it this session
+    const downloadedSong = downloadedSongs.get(r.youtube_id)
+    const song: Song = downloadedSong ?? {
       id:               r.youtube_id,
       youtube_id:       r.youtube_id,
       title:            r.title,

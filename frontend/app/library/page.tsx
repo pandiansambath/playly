@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
 import { Library, Search, Clock, AlignLeft, Shuffle, Play, Grid3X3, List } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, invalidateCache } from '@/lib/api'
 import { SongCard } from '@/components/SongCard'
 import { Song, UserSong } from '@/lib/supabase'
 import { preloadSongs, usePlayerStore } from '@/store/playerStore'
@@ -17,12 +17,25 @@ export default function LibraryPage() {
   const setCurrentSong = usePlayerStore(s => s.setCurrentSong)
 
   useEffect(() => {
-    api.getLibrary().then(d => {
-      setEntries(d.songs)
-      setLoading(false)
-      // Kick off background preloading immediately — blob URLs = instant play
-      preloadSongs(d.songs.map((e: any) => e.songs))
-    })
+    function fetchLibrary() {
+      // Always invalidate so we never show stale data after a download
+      invalidateCache('library')
+      setLoading(true)
+      api.getLibrary().then(d => {
+        setEntries(d.songs)
+        setLoading(false)
+        // Kick off background preloading immediately — blob URLs = instant play
+        preloadSongs(d.songs.map((e: any) => e.songs))
+      }).catch(() => setLoading(false))
+    }
+
+    fetchLibrary() // Initial fetch
+
+    // Re-fetch whenever the tab becomes visible again (handles back-navigation
+    // where Next.js may restore this component from cache without remounting)
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchLibrary() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
   async function toggleFav(songId: string) {
