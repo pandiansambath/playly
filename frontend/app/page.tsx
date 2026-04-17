@@ -17,12 +17,12 @@ import { Song } from '@/lib/supabase'
 // STARS CONFIG (fixed seed so no hydration mismatch)
 // ─────────────────────────────────────────────────────────
 const STARS = Array.from({ length: 55 }, (_, i) => ({
-  w:    2 + (i * 17 % 3),
-  top:  (i * 37 % 97) + '%',
+  w: 2 + (i * 17 % 3),
+  top: (i * 37 % 97) + '%',
   left: (i * 61 % 97) + '%',
-  dur:  2.2 + (i * 0.13 % 2.4) + 's',
-  del:  (i * 0.19 % 2.5) + 's',
-  op:   0.15 + (i * 0.11 % 0.45),
+  dur: 2.2 + (i * 0.13 % 2.4) + 's',
+  del: (i * 0.19 % 2.5) + 's',
+  op: 0.15 + (i * 0.11 % 0.45),
 }))
 
 // ─────────────────────────────────────────────────────────
@@ -30,30 +30,30 @@ const STARS = Array.from({ length: 55 }, (_, i) => ({
 // ─────────────────────────────────────────────────────────
 function PlayLyLogo({ size = 'xl' }: { size?: 'sm' | 'xl' }) {
   const heights = [38, 70, 55, 90, 42, 78, 52, 95, 60, 80]
-  const scale   = size === 'xl' ? 1 : 0.55
+  const scale = size === 'xl' ? 1 : 0.55
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: size === 'xl' ? 12 : 6 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: size === 'xl' ? 3 : 2 }}>
         {heights.map((h, i) => (
           <div key={i} className="logo-bar"
             style={{
-              width:   Math.round(4 * scale),
-              height:  Math.round(h * scale * 0.36),
+              width: Math.round(4 * scale),
+              height: Math.round(h * scale * 0.36),
               borderRadius: 99,
               background: 'linear-gradient(to top, var(--accent), var(--accent-alt))',
               transformOrigin: 'bottom',
               animationDuration: `${0.48 + i * 0.08}s`,
-              animationDelay:    `${i * 0.045}s`,
+              animationDelay: `${i * 0.045}s`,
             }} />
         ))}
       </div>
       <span style={{
-        fontSize:   size === 'xl' ? 36 : 18,
+        fontSize: size === 'xl' ? 36 : 18,
         fontWeight: 900,
         letterSpacing: '-0.02em',
         background: 'var(--gradient-text)',
         WebkitBackgroundClip: 'text',
-        WebkitTextFillColor:  'transparent',
+        WebkitTextFillColor: 'transparent',
         backgroundClip: 'text',
       }}>PlayLy</span>
     </div>
@@ -65,10 +65,10 @@ function PlayLyLogo({ size = 'xl' }: { size?: 'sm' | 'xl' }) {
 // ─────────────────────────────────────────────────────────
 function LandingPage() {
   const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState('')
-  const [mode,    setMode]    = useState<'google' | 'email'>('google')
+  const [error, setError] = useState('')
+  const [mode, setMode] = useState<'google' | 'email'>('google')
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
-  const [email,   setEmail]   = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
 
@@ -113,13 +113,13 @@ function LandingPage() {
             background: 'white',
             opacity: s.op,
             animationDuration: s.dur,
-            animationDelay:    s.del,
+            animationDelay: s.del,
           }} />
       ))}
 
       {/* ─── Aurora blobs ─── */}
-      <div className="aurora-blob" style={{ width: 500, height: 500, top: '-10%', left: '-5%',  background: 'rgba(139,92,246,0.22)', animationDelay: '0s' }} />
-      <div className="aurora-blob" style={{ width: 420, height: 420, top: '40%',  right: '-8%', background: 'rgba(236,72,153,0.18)', animationDelay: '2s' }} />
+      <div className="aurora-blob" style={{ width: 500, height: 500, top: '-10%', left: '-5%', background: 'rgba(139,92,246,0.22)', animationDelay: '0s' }} />
+      <div className="aurora-blob" style={{ width: 420, height: 420, top: '40%', right: '-8%', background: 'rgba(236,72,153,0.18)', animationDelay: '2s' }} />
       <div className="aurora-blob" style={{ width: 360, height: 360, bottom: '-5%', left: '25%', background: 'rgba(99,102,241,0.15)', animationDelay: '4s' }} />
 
       {/* ─── LEFT PANEL ─── */}
@@ -134,9 +134,9 @@ function LandingPage() {
         <div className="mb-4 fade-in delay-100">
           <h1 className="landing-hero-title fade-in"
             style={{
-              fontSize:    'clamp(2.2rem, 5vw, 3.8rem)',
-              fontWeight:  900,
-              lineHeight:  1.08,
+              fontSize: 'clamp(2.2rem, 5vw, 3.8rem)',
+              fontWeight: 900,
+              lineHeight: 1.08,
               letterSpacing: '-0.03em',
               color: 'var(--text-primary)',
             }}>
@@ -144,7 +144,7 @@ function LandingPage() {
             <span style={{
               background: 'linear-gradient(120deg, var(--accent), var(--accent-alt), #f97316)',
               WebkitBackgroundClip: 'text',
-              WebkitTextFillColor:  'transparent',
+              WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
             }}>beautifully</span>
             <br />streamed.
@@ -158,18 +158,18 @@ function LandingPage() {
         {/* Feature chips (compact) */}
         <div className="landing-feature-grid flex flex-wrap gap-2 mb-6 fade-in delay-200">
           {([
-            [Zap,       'Instant play'],
-            [Download,  'Offline ready'],
-            [Sparkles,  'Smart discover'],
-            [Heart,     'Build playlists'],
+            [Zap, 'Instant play'],
+            [Download, 'Offline ready'],
+            [Sparkles, 'Smart discover'],
+            [Heart, 'Build playlists'],
           ] as const).map(([Icon, lbl], i) => (
             <div key={i}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
               style={{
-                background:  'rgba(255,255,255,0.06)',
-                border:      '1px solid rgba(255,255,255,0.1)',
-                fontSize:    12,
-                color:       'var(--text-secondary)',
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                fontSize: 12,
+                color: 'var(--text-secondary)',
               }}>
               {/* @ts-ignore */}
               <Icon size={12} style={{ color: 'var(--accent)' }} />
@@ -210,10 +210,10 @@ function LandingPage() {
                 <div className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
               ) : (
                 <svg width="20" height="20" viewBox="0 0 48 48">
-                  <path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.9 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.4-.1-2.7-.5-4z"/>
-                  <path fill="#34A853" d="M6.3 14.7l7 5.1C15.1 16 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 16.3 3 9.7 7.9 6.3 14.7z"/>
-                  <path fill="#FBBC05" d="M24 45c5.9 0 11-1.9 14.9-5.3l-6.9-5.7C29.9 36.1 27.1 37 24 37c-5.8 0-10.7-3.9-12.5-9.3l-7 5.4C7.9 41.2 15.4 45 24 45z"/>
-                  <path fill="#EA4335" d="M43.6 20H24v8.5h11.8c-.8 2.4-2.3 4.4-4.3 5.7l6.9 5.7C43 36 45 30.5 45 24c0-1.4-.2-2.7-.4-4z"/>
+                  <path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.9 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.4-.1-2.7-.5-4z" />
+                  <path fill="#34A853" d="M6.3 14.7l7 5.1C15.1 16 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 16.3 3 9.7 7.9 6.3 14.7z" />
+                  <path fill="#FBBC05" d="M24 45c5.9 0 11-1.9 14.9-5.3l-6.9-5.7C29.9 36.1 27.1 37 24 37c-5.8 0-10.7-3.9-12.5-9.3l-7 5.4C7.9 41.2 15.4 45 24 45z" />
+                  <path fill="#EA4335" d="M43.6 20H24v8.5h11.8c-.8 2.4-2.3 4.4-4.3 5.7l6.9 5.7C43 36 45 30.5 45 24c0-1.4-.2-2.7-.4-4z" />
                 </svg>
               )}
               <span style={{ color: '#ffffff' }}>
@@ -329,9 +329,9 @@ function LandingPage() {
             className="absolute text-2xl select-none pointer-events-none music-note"
             style={{
               bottom: `${15 + i * 12}%`,
-              left:   `${18 + (i % 3) * 28}%`,
+              left: `${18 + (i % 3) * 28}%`,
               animationDuration: `${2.5 + i * 0.5}s`,
-              animationDelay:    `${i * 0.6}s`,
+              animationDelay: `${i * 0.6}s`,
               opacity: 0,
               fontSize: 20 - i,
               color: i % 2 === 0 ? 'rgba(139,92,246,0.8)' : 'rgba(236,72,153,0.7)',
@@ -350,7 +350,7 @@ function LandingPage() {
               background: `linear-gradient(to top, var(--accent), var(--accent-alt))`,
               transformOrigin: 'bottom',
               animationDuration: `${0.5 + i * 0.06}s`,
-              animationDelay:    `${i * 0.04}s`,
+              animationDelay: `${i * 0.04}s`,
             }} />
           ))}
         </div>
@@ -425,15 +425,32 @@ function SearchBar({ value, onChange, loading }: {
 // MAIN SEARCH / APP PAGE
 // ─────────────────────────────────────────────────────────
 function SearchPage() {
-  const [query,        setQuery]        = useState('')
-  const [results,      setResults]      = useState<YTResult[]>([])
-  const [searching,    setSearching]    = useState(false)
-  const [downloading,    setDownloading]    = useState<Set<string>>(new Set())
-  const [done,           setDone]           = useState<Set<string>>(new Set())
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<YTResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [downloading, setDownloading] = useState<Set<string>>(new Set())
+  const [done, setDone] = useState<Set<string>>(new Set())
   const [downloadedSongs, setDownloadedSongs] = useState<Map<string, Song>>(new Map())
-  const [error,          setError]          = useState('')
+  const [error, setError] = useState('')
   const setCurrentSong = usePlayerStore(s => s.setCurrentSong)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  // Pre-load library on mount so already-downloaded songs show Play instead of Download
+  useEffect(() => {
+    api.getLibrary().then(d => {
+      const doneIds = new Set<string>()
+      const songsMap = new Map<string, Song>()
+        ; (d.songs || []).forEach((e: any) => {
+          const song: Song = e.songs
+          if (song?.youtube_id) {
+            doneIds.add(song.youtube_id)
+            songsMap.set(song.youtube_id, song)
+          }
+        })
+      setDone(doneIds)
+      setDownloadedSongs(songsMap)
+    }).catch(() => {/* silently ignore — user just won't see pre-marked songs */ })
+  }, [])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -463,7 +480,13 @@ function SearchPage() {
       setDone(d => new Set([...d, r.youtube_id]))
       showToast('Added to library ✓')
     } catch (e: any) {
-      showToast(e?.message || 'Download failed. Try again.', false)
+      const raw: string = e?.message || ''
+      const friendly = raw.includes('cookie') || raw.includes('sign in') || raw.includes('bot') || raw.includes('authentication')
+        ? 'YouTube blocked this download. Try another song or contact the admin.'
+        : raw.includes('private') || raw.includes('unavailable')
+          ? 'This video is private or unavailable.'
+          : 'Download failed. Please try again.'
+      showToast(friendly, false)
     } finally { setDownloading(d => { const s = new Set(d); s.delete(r.youtube_id); return s }) }
   }
 
@@ -471,13 +494,13 @@ function SearchPage() {
     // Use the real song data (with supabase_url) if we downloaded it this session
     const downloadedSong = downloadedSongs.get(r.youtube_id)
     const song: Song = downloadedSong ?? {
-      id:               r.youtube_id,
-      youtube_id:       r.youtube_id,
-      title:            r.title,
-      movie_name:       r.channel,
-      thumbnail_url:    r.thumbnail_url,
+      id: r.youtube_id,
+      youtube_id: r.youtube_id,
+      title: r.title,
+      movie_name: r.channel,
+      thumbnail_url: r.thumbnail_url,
       duration_seconds: r.duration_seconds,
-      supabase_url:     '',
+      supabase_url: '',
     }
     setCurrentSong(song, [song], 'Search')
   }
