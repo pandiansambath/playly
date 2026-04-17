@@ -31,6 +31,15 @@ spec:
         - configMapRef:
             name: playly-config
 
+        env:
+        - name: YOUTUBE_COOKIE_FILE
+          value: "/etc/yt-cookies/cookies.txt"
+
+        volumeMounts:
+        - name: youtube-cookies-vol
+          mountPath: /etc/yt-cookies
+          readOnly: true
+
         resources:
           requests:
             memory: "256Mi"
@@ -55,3 +64,8 @@ spec:
           initialDelaySeconds: 10
           periodSeconds: 10
           failureThreshold: 3
+
+      volumes:
+      - name: youtube-cookies-vol
+        secret:
+          secretName: youtube-cookies
