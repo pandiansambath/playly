@@ -65,14 +65,40 @@ function PlayLyLogo({ size = 'xl' }: { size?: 'sm' | 'xl' }) {
 function LandingPage() {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
+  const [mode,    setMode]    = useState<'google' | 'email'>('google')
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
+  const [email,   setEmail]   = useState('')
+  const [password, setPassword] = useState('')
+  const [showPass, setShowPass] = useState(false)
 
-  async function signIn() {
+  async function signInGoogle() {
     setLoading(true); setError('')
     const { error: e } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${window.location.origin}/auth/callback` },
     })
     if (e) { setError(e.message); setLoading(false) }
+  }
+
+  async function handleEmailAuth(e: React.FormEvent) {
+    e.preventDefault()
+    if (!email.trim() || !password.trim()) { setError('Please fill in all fields'); return }
+    setLoading(true); setError('')
+    try {
+      if (authMode === 'signin') {
+        const { error: err } = await supabase.auth.signInWithPassword({ email, password })
+        if (err) setError(err.message)
+      } else {
+        const { error: err } = await supabase.auth.signUp({
+          email, password,
+          options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+        })
+        if (err) setError(err.message)
+        else setError('Check your email to confirm your account ✓')
+      }
+    } catch (err: any) {
+      setError(err.message || 'Something went wrong')
+    } finally { setLoading(false) }
   }
 
   return (
@@ -151,27 +177,107 @@ function LandingPage() {
           ))}
         </div>
 
-        {/* ── Google OAuth button (animated border — Issue 3) ── */}
-        <div className="fade-in delay-300">
-          <button onClick={signIn} disabled={loading}
-            id="google-signin-btn"
-            className="oauth-google-btn w-full flex items-center justify-center gap-3 py-3.5 px-6 font-semibold text-sm disabled:opacity-60"
-            style={{ maxWidth: 340 }}>
-            {loading ? (
-              <div className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-            ) : (
-              <svg width="20" height="20" viewBox="0 0 48 48">
-                <path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.9 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.4-.1-2.7-.5-4z"/>
-                <path fill="#34A853" d="M6.3 14.7l7 5.1C15.1 16 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 16.3 3 9.7 7.9 6.3 14.7z"/>
-                <path fill="#FBBC05" d="M24 45c5.9 0 11-1.9 14.9-5.3l-6.9-5.7C29.9 36.1 27.1 37 24 37c-5.8 0-10.7-3.9-12.5-9.3l-7 5.4C7.9 41.2 15.4 45 24 45z"/>
-                <path fill="#EA4335" d="M43.6 20H24v8.5h11.8c-.8 2.4-2.3 4.4-4.3 5.7l6.9 5.7C43 36 45 30.5 45 24c0-1.4-.2-2.7-.4-4z"/>
-              </svg>
-            )}
-            <span style={{ color: '#ffffff' }}>
-              {loading ? 'Signing in…' : 'Continue with Google'}
-            </span>
-          </button>
-          {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+        {/* ── Auth section ── */}
+        <div className="fade-in delay-300" style={{ maxWidth: 340 }}>
+
+          {/* Tab switcher */}
+          <div className="flex gap-2 mb-4 p-1 rounded-2xl" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <button onClick={() => { setMode('google'); setError('') }}
+              className="flex-1 py-2 rounded-xl text-xs font-bold transition-all"
+              style={mode === 'google' ? {
+                background: 'rgba(139,92,246,0.25)', color: 'rgba(255,255,255,0.9)',
+                border: '1px solid rgba(139,92,246,0.4)',
+              } : { color: 'rgba(255,255,255,0.4)' }}>
+              Google
+            </button>
+            <button onClick={() => { setMode('email'); setError('') }}
+              className="flex-1 py-2 rounded-xl text-xs font-bold transition-all"
+              style={mode === 'email' ? {
+                background: 'rgba(139,92,246,0.25)', color: 'rgba(255,255,255,0.9)',
+                border: '1px solid rgba(139,92,246,0.4)',
+              } : { color: 'rgba(255,255,255,0.4)' }}>
+              Email
+            </button>
+          </div>
+
+          {mode === 'google' ? (
+            /* Google OAuth button */
+            <button onClick={signInGoogle} disabled={loading}
+              id="google-signin-btn"
+              className="oauth-google-btn w-full flex items-center justify-center gap-3 py-3.5 px-6 font-semibold text-sm disabled:opacity-60">
+              {loading ? (
+                <div className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 48 48">
+                  <path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.9 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.4-.1-2.7-.5-4z"/>
+                  <path fill="#34A853" d="M6.3 14.7l7 5.1C15.1 16 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 16.3 3 9.7 7.9 6.3 14.7z"/>
+                  <path fill="#FBBC05" d="M24 45c5.9 0 11-1.9 14.9-5.3l-6.9-5.7C29.9 36.1 27.1 37 24 37c-5.8 0-10.7-3.9-12.5-9.3l-7 5.4C7.9 41.2 15.4 45 24 45z"/>
+                  <path fill="#EA4335" d="M43.6 20H24v8.5h11.8c-.8 2.4-2.3 4.4-4.3 5.7l6.9 5.7C43 36 45 30.5 45 24c0-1.4-.2-2.7-.4-4z"/>
+                </svg>
+              )}
+              <span style={{ color: '#ffffff' }}>
+                {loading ? 'Signing in…' : 'Continue with Google'}
+              </span>
+            </button>
+          ) : (
+            /* Email / Password form */
+            <form onSubmit={handleEmailAuth} className="flex flex-col gap-3">
+              {/* Sign in / Sign up toggle */}
+              <div className="flex gap-3 mb-1">
+                <button type="button" onClick={() => { setAuthMode('signin'); setError('') }}
+                  className="text-xs font-bold transition-all pb-1"
+                  style={{
+                    color: authMode === 'signin' ? 'var(--accent)' : 'rgba(255,255,255,0.35)',
+                    borderBottom: authMode === 'signin' ? '2px solid var(--accent)' : '2px solid transparent',
+                  }}>Sign In</button>
+                <button type="button" onClick={() => { setAuthMode('signup'); setError('') }}
+                  className="text-xs font-bold transition-all pb-1"
+                  style={{
+                    color: authMode === 'signup' ? 'var(--accent)' : 'rgba(255,255,255,0.35)',
+                    borderBottom: authMode === 'signup' ? '2px solid var(--accent)' : '2px solid transparent',
+                  }}>Sign Up</button>
+              </div>
+
+              <input
+                type="email" value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="Email address"
+                required autoComplete="email"
+                className="input-field w-full px-4 py-3 rounded-2xl text-sm"
+                style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}
+              />
+              <div className="relative">
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  value={password} onChange={e => setPassword(e.target.value)}
+                  placeholder="Password"
+                  required autoComplete={authMode === 'signin' ? 'current-password' : 'new-password'}
+                  className="input-field w-full px-4 py-3 pr-12 rounded-2xl text-sm"
+                  style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}
+                />
+                <button type="button" onClick={() => setShowPass(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs"
+                  style={{ color: 'var(--text-muted)' }}>
+                  {showPass ? 'hide' : 'show'}
+                </button>
+              </div>
+
+              <button type="submit" disabled={loading}
+                className="w-full py-3.5 rounded-2xl text-sm font-bold text-white transition-all hover:opacity-90 active:scale-98 disabled:opacity-50"
+                style={{
+                  background: 'linear-gradient(135deg, var(--accent), var(--accent-alt))',
+                  boxShadow: '0 8px 24px rgba(139,92,246,0.35)',
+                }}>
+                {loading
+                  ? <div className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin mx-auto" />
+                  : authMode === 'signin' ? 'Sign In' : 'Create Account'
+                }
+              </button>
+            </form>
+          )}
+
+          {error && (
+            <p className={`mt-2 text-xs ${error.includes('✓') ? 'text-green-400' : 'text-red-400'}`}>{error}</p>
+          )}
         </div>
 
         {/* Tiny note */}

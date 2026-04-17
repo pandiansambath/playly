@@ -13,9 +13,14 @@ function cached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
   return fetcher().then(data => { cache.set(key, { data, ts: Date.now() }); return data })
 }
 
-export function invalidateCache(key?: string) {
-  if (key) cache.delete(key)
-  else cache.clear()
+export function invalidateCache(prefix?: string) {
+  if (!prefix) { cache.clear(); return }
+  // Prefix-based: 'library' clears 'library_1', 'library_2', etc.
+  for (const key of [...cache.keys()]) {
+    if (key === prefix || key.startsWith(prefix + '_') || key.startsWith(prefix + '/')) {
+      cache.delete(key)
+    }
+  }
 }
 
 async function headers() {
@@ -105,7 +110,7 @@ export const api = {
   search:             (q: string)                             => get(`/search?q=${encodeURIComponent(q)}`),
   download:           (youtube_id: string, quality = '192')   => post('/download', { youtube_id, quality }).then(d => { invalidateCache('library'); return d }),
   getLibrary:         (page = 1)                              => cached(`library_${page}`, () => get(`/songs?page=${page}`)),
-  removeSong:         (id: string)                            => del(`/songs/${id}`).then(d => { invalidateCache('library_1'); return d }),
+  removeSong:         (id: string)                            => del(`/songs/${id}`).then(d => { invalidateCache('library'); return d }),
   getFavorites:       ()                                      => cached('favorites', () => get('/favorites')),
   addFavorite:        (id: string)                            => post(`/favorites/${id}`).then(d => { invalidateCache('favorites'); return d }),
   removeFavorite:     (id: string)                            => del(`/favorites/${id}`).then(d => { invalidateCache('favorites'); return d }),

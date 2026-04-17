@@ -76,7 +76,15 @@ export default function FavoritesPage() {
         <div className="glass rounded-3xl overflow-hidden fade-in" style={{ border: '1px solid var(--border)' }}>
           {favs.map(f => (
             <div key={f.id} className="border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
-              <SongCard song={f.songs} queue={songs} queueSource="Favorites" isFavorite onFavoriteToggle={remove} />
+              <SongCard
+                song={f.songs}
+                queue={songs}
+                queueSource="Favorites"
+                isFavorite
+                onFavoriteToggle={remove}
+                showRemove
+                onRemove={remove}
+              />
             </div>
           ))}
         </div>

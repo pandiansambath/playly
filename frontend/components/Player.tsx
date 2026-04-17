@@ -97,44 +97,32 @@ function EqCanvas({ isPlaying, accentColor }: { isPlaying: boolean; accentColor:
 }
 
 // ═══════════════════════════════════════════════════════════
-// MAGIC VISUALIZER CANVAS — inside player, behind content
-// Beat-reactive multi-layer: nebula particles + radial bars + ripples
+// MAGIC VISUALIZER CANVAS — soothing beat-reactive aura
+// Smooth breathing orbs + soft ripples that follow the beat
 // ═══════════════════════════════════════════════════════════
 function MagicCanvas({ accentColor }: { accentColor: string }) {
   const canvasRef  = useRef<HTMLCanvasElement>(null)
   const rafRef     = useRef<number>(0)
   const prevEnergy = useRef(0)
   const beatTime   = useRef(0)
-  const hueShift   = useRef(0)
+  const hueShift   = useRef(270) // start near purple
+  const breathe    = useRef(0)
+  // Active ripples spawned on each beat
+  const ripples    = useRef<{ r: number; maxR: number; alpha: number; hue: number }[]>([])
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')!
+    const el  = canvas
 
-    const el = canvas  // capture non-null ref for closure
-    function resize() {
-      el.width  = el.offsetWidth
-      el.height = el.offsetHeight
-    }
+    function resize() { el.width = el.offsetWidth; el.height = el.offsetHeight }
     resize()
     window.addEventListener('resize', resize)
 
     const analyser = _analyser
     const bufLen   = analyser?.frequencyBinCount ?? 128
     const dataArr  = analyser ? new Uint8Array(bufLen) : null
-
-    // Particles — use 'el' (non-null captured ref) not 'canvas'
-    const particles = Array.from({ length: 70 }, (_, i) => ({
-      x:  Math.random() * el.width,
-      y:  Math.random() * el.height,
-      vx: (Math.random() - 0.5) * 1.2,
-      vy: (Math.random() - 0.5) * 1.2,
-      r:  4 + Math.random() * 18,
-      hue: (i / 70) * 360,
-      freqI: Math.floor(i * (bufLen - 1) / 70),
-      life: Math.random(),
-    }))
 
     function draw() {
       rafRef.current = requestAnimationFrame(draw)
@@ -144,112 +132,78 @@ function MagicCanvas({ accentColor }: { accentColor: string }) {
 
       if (analyser && dataArr) analyser.getByteFrequencyData(dataArr)
 
-      // Beat detection — LOW thresholds so even light beats trigger
-      const bassSum = dataArr ? (dataArr[1] + dataArr[2] + dataArr[3] + dataArr[4] + dataArr[5]) / (5 * 255) : 0.15
-      const midSum  = dataArr ? (dataArr[8] + dataArr[12] + dataArr[18]) / (3 * 255) : 0.10
-      const energy  = bassSum * 0.7 + midSum * 0.3
-      const now     = performance.now()
-      // Trigger on ANY energy spike >= 12% above running average, min 120ms apart
-      const isBeat  = energy > prevEnergy.current * 1.12 && energy > 0.06 && now - beatTime.current > 120
-      if (isBeat) beatTime.current = now
-      prevEnergy.current = energy * 0.65 + prevEnergy.current * 0.35
-      hueShift.current   = (hueShift.current + 0.6 + energy * 3) % 360
+      // Energy extraction
+      const bass   = dataArr ? (dataArr[1]+dataArr[2]+dataArr[3]+dataArr[4]) / (4*255) : 0.12
+      const mid    = dataArr ? (dataArr[8]+dataArr[12]+dataArr[16]) / (3*255) : 0.08
+      const energy = bass * 0.72 + mid * 0.28
 
-      // Fade trail — faster fade on beats for crisp flash, slower otherwise
-      ctx.fillStyle = `rgba(5,5,18,${isBeat ? 0.35 : 0.14 + energy * 0.1})`
+      // Beat detection — clean threshold
+      const now    = performance.now()
+      const isBeat = energy > prevEnergy.current * 1.14 && energy > 0.07 && now - beatTime.current > 140
+      if (isBeat) {
+        beatTime.current = now
+        ripples.current.push({ r: 0, maxR: Math.min(W,H) * 0.48, alpha: 0.55, hue: hueShift.current })
+        if (ripples.current.length > 5) ripples.current.shift()
+      }
+      prevEnergy.current = energy * 0.6 + prevEnergy.current * 0.4
+      hueShift.current   = (hueShift.current + 0.25 + energy * 1.2) % 360
+      breathe.current    = (breathe.current + 0.012 + energy * 0.04) % (Math.PI * 2)
+
+      // Smooth background fade
+      ctx.fillStyle = 'rgba(4,4,14,0.18)'
       ctx.fillRect(0, 0, W, H)
 
       const cx = W / 2
       const cy = H / 2
+      const minD = Math.min(cx, cy)
 
-      // Layer 1: Circular frequency bars — longer on beat
-      if (dataArr) {
-        const BARS   = 72
-        const beatMult = isBeat ? 1.8 : 1
-        const baseR  = Math.min(cx, cy) * 0.28
-        const maxLen = Math.min(cx, cy) * 0.55 * beatMult
-        for (let i = 0; i < BARS; i++) {
-          const bin   = Math.floor(i * (bufLen * 0.65) / BARS) + 1
-          const v     = dataArr[bin] / 255
-          const angle = (i / BARS) * Math.PI * 2 - Math.PI / 2
-          const len   = (6 + v * maxLen) * (1 + energy * 0.4)
-          const hue   = (hueShift.current + i * 5) % 360
-          const x1 = cx + Math.cos(angle) * baseR
-          const y1 = cy + Math.sin(angle) * baseR
-          const x2 = cx + Math.cos(angle) * (baseR + len)
-          const y2 = cy + Math.sin(angle) * (baseR + len)
-          ctx.beginPath()
-          ctx.moveTo(x1, y1)
-          ctx.lineTo(x2, y2)
-          ctx.strokeStyle = `hsla(${hue},100%,${60 + v * 30}%,${0.25 + v * 0.75})`
-          ctx.lineWidth   = isBeat ? 3 + v * 4 : 1.5 + v * 2.5
-          ctx.lineCap     = 'round'
-          ctx.stroke()
-        }
-      }
-
-      // Layer 2: Center glow — breathes with every energy change, PULSES on beat
-      const glowMult = isBeat ? 2.2 : 1
-      const glowR = Math.min(cx, cy) * (0.10 + bassSum * 0.25 * glowMult)
-      const gGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR)
-      gGlow.addColorStop(0,   `hsla(${hueShift.current},100%,90%,${isBeat ? 0.95 : 0.5 + bassSum * 0.4})`)
-      gGlow.addColorStop(0.4, `hsla(${(hueShift.current + 40) % 360},100%,65%,${0.3 + bassSum * 0.4})`)
-      gGlow.addColorStop(1,   'transparent')
-      ctx.beginPath(); ctx.arc(cx, cy, glowR, 0, Math.PI * 2)
-      ctx.fillStyle = gGlow; ctx.fill()
-
-      // Beat shockwave ring — expands outward
-      if (isBeat) {
-        for (let ring = 0; ring < 2; ring++) {
-          const beatR = Math.min(cx, cy) * (0.38 + ring * 0.22)
-          const gBeat = ctx.createRadialGradient(cx, cy, beatR * 0.75, cx, cy, beatR)
-          gBeat.addColorStop(0, 'transparent')
-          gBeat.addColorStop(0.5, `hsla(${(hueShift.current + ring * 90) % 360},100%,85%,${0.7 - ring * 0.2})`)
-          gBeat.addColorStop(1, 'transparent')
-          ctx.beginPath(); ctx.arc(cx, cy, beatR, 0, Math.PI * 2)
-          ctx.fillStyle = gBeat; ctx.fill()
-        }
-      }
-
-      // Layer 3: Floating particles — more speed, bigger on every beat
-      particles.forEach(p => {
-        const freq  = dataArr ? dataArr[p.freqI] / 255 : 0.2
-        const speed = (1.2 + energy * 3.5) * (isBeat ? 2 : 1)
-        p.x += p.vx * speed
-        p.y += p.vy * speed
-        p.hue  = (p.hue + 1 + freq * 3) % 360
-        p.life = (p.life + 0.003 + energy * 0.004) % 1
-
-        if (p.x < -20) p.x = W + 20; if (p.x > W + 20) p.x = -20
-        if (p.y < -20) p.y = H + 20; if (p.y > H + 20) p.y = -20
-
-        const r    = p.r * (0.6 + freq * 1.6) * (isBeat ? 1.8 : 1)
-        const life = Math.sin(p.life * Math.PI)
-        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r)
-        g.addColorStop(0,   `hsla(${p.hue},100%,82%,${Math.min(0.92, (0.5 + freq * 0.5) * life)})`)
-        g.addColorStop(0.55,`hsla(${p.hue + 40},90%,60%,${(0.2 + freq * 0.3) * life})`)
+      // ── Layer 1: Ambient background aurora (2 slow drifting orbs) ──
+      for (let o = 0; o < 2; o++) {
+        const phase = breathe.current + o * Math.PI
+        const ox = cx + Math.cos(phase * 0.3 + o * 2.1) * minD * 0.28
+        const oy = cy + Math.sin(phase * 0.25 + o * 1.8) * minD * 0.22
+        const r  = minD * (0.55 + energy * 0.22 + Math.sin(phase) * 0.08)
+        const hue = (hueShift.current + o * 50) % 360
+        const g  = ctx.createRadialGradient(ox, oy, 0, ox, oy, r)
+        g.addColorStop(0,   `hsla(${hue},90%,68%,${0.10 + energy * 0.12})`)
+        g.addColorStop(0.5, `hsla(${(hue+30)%360},85%,55%,${0.05 + energy * 0.06})`)
         g.addColorStop(1,   'transparent')
-        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
+        ctx.beginPath(); ctx.arc(ox, oy, r, 0, Math.PI*2)
         ctx.fillStyle = g; ctx.fill()
-      })
-
-      // Layer 4: Aurora wave ribbons — amplitude reacts to energy AND beats
-      const wavePoints = 10
-      const amp = H * 0.09 * (1 + energy * 3.5) * (isBeat ? 1.6 : 1)
-      for (let wave = 0; wave < 3; wave++) {
-        const hue = (hueShift.current + wave * 70) % 360
-        const yBase = wave === 0 ? H * 0.08 : wave === 1 ? H * 0.92 : H * 0.5
-        ctx.beginPath()
-        for (let i = 0; i <= wavePoints; i++) {
-          const x = (i / wavePoints) * W
-          const freq = dataArr ? dataArr[Math.floor(i * bufLen * 0.55 / wavePoints)] / 255 : 0.2
-          const y = yBase + Math.sin(i * 0.9 + now * 0.0015 * (wave + 1)) * amp * (1 + freq * 1.2)
-          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-        }
-        ctx.strokeStyle = `hsla(${hue},100%,70%,${isBeat ? 0.6 : 0.18 + energy * 0.35})`
-        ctx.lineWidth = isBeat ? 4 + wave : 2 + wave
-        ctx.stroke()
       }
+
+      // ── Layer 2: Breathing center core ──
+      const coreR = minD * (0.10 + bass * 0.18 + Math.sin(breathe.current) * 0.04)
+      const gc    = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR)
+      gc.addColorStop(0,   `hsla(${hueShift.current},100%,92%,${0.70 + bass * 0.28})`)
+      gc.addColorStop(0.35,`hsla(${hueShift.current},95%,70%,${0.40 + bass * 0.20})`)
+      gc.addColorStop(0.75,`hsla(${(hueShift.current+25)%360},85%,55%,${0.12 + energy * 0.12})`)
+      gc.addColorStop(1,   'transparent')
+      ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, Math.PI*2)
+      ctx.fillStyle = gc; ctx.fill()
+
+      // ── Layer 3: Mid-frequency soft ring ──
+      const ringR = minD * (0.28 + mid * 0.20)
+      const gr    = ctx.createRadialGradient(cx, cy, ringR*0.78, cx, cy, ringR)
+      gr.addColorStop(0,   'transparent')
+      gr.addColorStop(0.5, `hsla(${(hueShift.current+40)%360},90%,72%,${0.08 + mid * 0.18})`)
+      gr.addColorStop(1,   'transparent')
+      ctx.beginPath(); ctx.arc(cx, cy, ringR, 0, Math.PI*2)
+      ctx.fillStyle = gr; ctx.fill()
+
+      // ── Layer 4: Beat ripples — smooth expanding rings ──
+      ripples.current = ripples.current.filter(rp => rp.alpha > 0.01)
+      ripples.current.forEach(rp => {
+        rp.r     += (rp.maxR - rp.r) * 0.055   // ease-out expansion
+        rp.alpha *= 0.956                         // smooth fade
+        const width = rp.maxR * 0.045
+        const gr2   = ctx.createRadialGradient(cx, cy, rp.r - width, cx, cy, rp.r + width)
+        gr2.addColorStop(0,   'transparent')
+        gr2.addColorStop(0.5, `hsla(${rp.hue},100%,82%,${rp.alpha})`)
+        gr2.addColorStop(1,   'transparent')
+        ctx.beginPath(); ctx.arc(cx, cy, rp.r, 0, Math.PI*2)
+        ctx.fillStyle = gr2; ctx.fill()
+      })
     }
     draw()
 
@@ -573,13 +527,11 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
               {/* Magic button */}
               <button
                 onClick={() => { ensureAnalyser(); setMagicOn(v => !v) }}
-                className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 ${magicOn ? 'magic-btn-active' : ''}`}
-                style={magicOn ? {} : { background: 'rgba(255,255,255,0.08)' }}
+                className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 ${magicOn ? 'magic-btn-active' : 'magic-btn-idle'}`}
                 title="Magic Mode">
-                <Sparkles size={16}
-                  style={{ color: magicOn ? 'white' : 'rgba(255,255,255,0.5)' }}
-                  className={magicOn ? 'animate-spin' : ''}
-                  strokeWidth={magicOn ? 2.5 : 1.5}
+                <Sparkles size={15}
+                  style={{ color: magicOn ? 'white' : 'rgba(255,255,255,0.45)' }}
+                  strokeWidth={magicOn ? 2 : 1.5}
                 />
               </button>
               {/* Video toggle */}
@@ -604,9 +556,9 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
           <div className="flex items-center justify-center py-2 flex-shrink-0">
             <div className="relative overflow-hidden shadow-2xl"
               style={{
-                width: showVideo ? 'min(90vw, 380px)' : 'min(70vw, 280px)',
+                width: showVideo ? 'min(88vw, 340px)' : 'min(55vw, 210px)',
                 aspectRatio: showVideo ? '16/9' : '1/1',
-                maxHeight: showVideo ? '45vw' : '280px',
+                maxHeight: showVideo ? '42vw' : '210px',
                 borderRadius: showVideo ? '18px' : '22px',
                 boxShadow: `0 30px 80px rgba(${accentColor},0.4), 0 8px 30px rgba(0,0,0,0.8)`,
                 transition: 'all 0.45s cubic-bezier(0.16,1,0.3,1)',

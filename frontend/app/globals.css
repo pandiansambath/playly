@@ -198,11 +198,6 @@ body {
 }
 
 /* Magic button pulse */
-@keyframes magic-pulse {
-  0%, 100% { box-shadow: 0 0 20px rgba(139,92,246,0.5), 0 0 40px rgba(236,72,153,0.3); }
-  50%       { box-shadow: 0 0 40px rgba(139,92,246,0.9), 0 0 80px rgba(236,72,153,0.6), 0 0 120px rgba(139,92,246,0.3); }
-}
-
 /* Spotlight vignette for magic mode */
 @keyframes spotlight-appear {
   from { opacity: 0; }
@@ -558,10 +553,44 @@ main { animation: fade-in 0.3s cubic-bezier(0.16,1,0.3,1); }
   );
 }
 
+/* Magic button — idle state */
+.magic-btn-idle {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  transition: all 0.3s ease;
+}
+.magic-btn-idle:hover {
+  background: rgba(139,92,246,0.14);
+  border-color: rgba(139,92,246,0.30);
+}
+
 /* Magic button — active state */
 .magic-btn-active {
-  animation: magic-pulse 2s ease-in-out infinite;
-  background: linear-gradient(135deg, #8B5CF6, #EC4899) !important;
+  background: linear-gradient(135deg, rgba(139,92,246,0.85), rgba(236,72,153,0.75)) !important;
+  border: 1px solid rgba(255,255,255,0.25) !important;
+  box-shadow:
+    0 0 0 1px rgba(139,92,246,0.4),
+    0 0 16px rgba(139,92,246,0.5),
+    0 0 32px rgba(236,72,153,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.2);
+  animation: magic-breathe 3s ease-in-out infinite;
+}
+
+@keyframes magic-breathe {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(139,92,246,0.4),
+      0 0 16px rgba(139,92,246,0.5),
+      0 0 32px rgba(236,72,153,0.25),
+      inset 0 1px 0 rgba(255,255,255,0.2);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(139,92,246,0.6),
+      0 0 28px rgba(139,92,246,0.7),
+      0 0 56px rgba(236,72,153,0.4),
+      inset 0 1px 0 rgba(255,255,255,0.25);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════

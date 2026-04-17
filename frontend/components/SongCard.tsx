@@ -23,11 +23,12 @@ interface Props {
   queueSource?: string
   isFavorite?: boolean
   onFavoriteToggle?: (id: string) => void
+  onDelete?: (id: string) => void   // Library only — permanent delete
   showRemove?: boolean
-  onRemove?: (id: string) => void
+  onRemove?: (id: string) => void   // Playlists / Favorites — remove
 }
 
-export function SongCard({ song, queue = [], queueSource = '', isFavorite = false, onFavoriteToggle, showRemove, onRemove }: Props) {
+export function SongCard({ song, queue = [], queueSource = '', isFavorite = false, onFavoriteToggle, onDelete, showRemove, onRemove }: Props) {
   const { currentSong, isPlaying, setCurrentSong } = usePlayerStore()
   const [showMenu,    setShowMenu]    = useState(false)
   const [menuAnchor,  setMenuAnchor]  = useState<{ top: number; right: number } | null>(null)
@@ -229,6 +230,26 @@ export function SongCard({ song, queue = [], queueSource = '', isFavorite = fals
               {pl.name}
             </button>
           ))}
+
+          {/* Remove / Delete actions */}
+          {(onRemove || onDelete) && (
+            <div className="border-t" style={{ borderColor: 'var(--border)' }}>
+              {onRemove && (
+                <button onClick={() => { onRemove(song.id); setShowMenu(false); setMenuAnchor(null) }}
+                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-left transition-all hover:bg-orange-500/10"
+                  style={{ color: '#fb923c' }}>
+                  <Trash2 size={13} /> Remove
+                </button>
+              )}
+              {onDelete && (
+                <button onClick={() => { onDelete(song.id); setShowMenu(false); setMenuAnchor(null) }}
+                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-left transition-all hover:bg-red-500/10"
+                  style={{ color: '#f87171' }}>
+                  <Trash2 size={13} /> Delete from Library
+                </button>
+              )}
+            </div>
+          )}
         </div>,
         document.body
       )}

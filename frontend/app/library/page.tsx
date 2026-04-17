@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import { SongCard } from '@/components/SongCard'
 import { Song, UserSong } from '@/lib/supabase'
 import { preloadSongs, usePlayerStore } from '@/store/playerStore'
+import { showToast } from '@/components/Toast'
 
 type SortKey = 'added' | 'alpha'
 
@@ -29,6 +30,17 @@ export default function LibraryPage() {
     if (!e) return
     e.is_favorite ? await api.removeFavorite(songId) : await api.addFavorite(songId)
     setEntries(prev => prev.map(x => x.songs.id === songId ? { ...x, is_favorite: !x.is_favorite } : x))
+  }
+
+  async function deleteSong(songId: string) {
+    if (!confirm('Remove this song from your library?')) return
+    try {
+      await api.removeSong(songId)
+      setEntries(prev => prev.filter(x => x.songs.id !== songId))
+      showToast('Removed from library')
+    } catch {
+      showToast('Failed to remove', false)
+    }
   }
 
   const filtered = useMemo(() => {
@@ -139,6 +151,7 @@ export default function LibraryPage() {
                 queueSource="My Library"
                 isFavorite={e.is_favorite}
                 onFavoriteToggle={toggleFav}
+                onDelete={deleteSong}
               />
             </div>
           ))}

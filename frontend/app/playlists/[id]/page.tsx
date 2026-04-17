@@ -43,6 +43,13 @@ export default function PlaylistDetailPage() {
     setAddingId(null)
   }
 
+  async function removeSong(songId: string) {
+    try {
+      await api.removeFromPlaylist(id, songId)
+      setSongs(prev => prev.filter(s => s.id !== songId))
+    } catch {}
+  }
+
   function playAll() {
     if (songs.length) setCurrentSong(songs[0], songs, playlist?.name || 'Playlist')
   }
@@ -130,6 +137,8 @@ export default function PlaylistDetailPage() {
               song={song}
               queue={songs}
               queueSource={playlist?.name || 'Playlist'}
+              showRemove
+              onRemove={removeSong}
             />
           ))}
         </div>
