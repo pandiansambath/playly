@@ -19,3 +19,15 @@ terraform/*.tfstate
 terraform/*.tfstate.backup
 terraform/.terraform.lock.hcl
 terraform/terraform.tfvars
+
+# Secrets / cookies / local-only dev files
+cookies.txt
+www.youtube.com_cookies.txt
+.claude/
+.mcp.json
+raw_prompt_from_developer.txt
+songs_links.txt
+screenshots/
+MASTER_PROMPT_OPUS.md
+frontend/tsconfig.tsbuildinfo
+/developer/

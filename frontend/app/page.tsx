@@ -573,31 +573,115 @@ function SearchPage() {
 }
 
 // ─────────────────────────────────────────────────────────
+// INTRO / PRE-APP LOADING SCREEN
+// Beautiful music-themed loader — shown between auth check and app entry.
+// Auth + library pre-fetch happens elsewhere; this just makes the wait soothing.
+// ─────────────────────────────────────────────────────────
+function PlayLyIntroScreen() {
+  const phrases = useMemo(() => [
+    'tuning the strings…',
+    'warming the speakers…',
+    'dusting off the discs…',
+    'loading your rhythm…',
+    'almost there…',
+  ], [])
+  const [phraseIdx, setPhraseIdx] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setPhraseIdx(i => (i + 1) % phrases.length), 1400)
+    return () => clearInterval(t)
+  }, [phrases.length])
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center overflow-hidden"
+      style={{
+        background:
+          'radial-gradient(ellipse at 30% 20%, rgba(139,92,246,0.22) 0%, transparent 55%),' +
+          'radial-gradient(ellipse at 75% 85%, rgba(236,72,153,0.18) 0%, transparent 55%),' +
+          'var(--bg-base)',
+      }}>
+      {/* Aurora blobs */}
+      <div className="aurora-blob" style={{ width: 420, height: 420, top: '-10%', left: '-8%', background: 'rgba(139,92,246,0.22)' }} />
+      <div className="aurora-blob" style={{ width: 360, height: 360, bottom: '-10%', right: '-8%', background: 'rgba(236,72,153,0.18)', animationDelay: '1.5s' }} />
+
+      {/* Stars */}
+      {Array.from({ length: 40 }, (_, i) => (
+        <div key={i} className="landing-star pointer-events-none" style={{
+          top: `${i * 41 % 97}%`, left: `${i * 67 % 97}%`,
+          width: 1 + (i % 3), height: 1 + (i % 3), background: 'white',
+          opacity: 0.08 + (i * 0.01 % 0.25),
+          animationDuration: `${1.8 + i * 0.14}s`, animationDelay: `${i * 0.1}s`,
+        }} />
+      ))}
+
+      <div className="relative z-10 flex flex-col items-center gap-7">
+        {/* Breathing disc with pulsing ring */}
+        <div className="relative flex items-center justify-center"
+          style={{ width: 148, height: 148 }}>
+          <div style={{
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            background: 'conic-gradient(from 0deg, #8B5CF6, #EC4899, #F97316, #06B6D4, #8B5CF6)',
+            filter: 'blur(14px)', opacity: 0.55,
+            animation: 'spin-disc 5s linear infinite',
+          }} />
+          <div style={{
+            position: 'relative', width: 110, height: 110, borderRadius: '50%',
+            background: 'linear-gradient(135deg, #1a0a3a, #0f0715)',
+            border: '1px solid rgba(139,92,246,0.3)',
+            boxShadow: '0 20px 60px rgba(139,92,246,0.5), inset 0 0 40px rgba(0,0,0,0.6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Music size={40} style={{ color: 'rgba(196,181,253,0.85)' }} />
+            <div style={{
+              position: 'absolute', top: '50%', left: '50%',
+              width: 10, height: 10, borderRadius: '50%',
+              background: '#fff',
+              transform: 'translate(-50%,-50%)',
+              boxShadow: '0 0 10px rgba(255,255,255,0.9)',
+            }} />
+          </div>
+        </div>
+
+        {/* EQ bars */}
+        <div className="flex items-end gap-1">
+          {[40, 75, 55, 90, 45, 80, 52, 95, 62, 68, 82].map((h, i) => (
+            <div key={i} className="eq-bar rounded-full"
+              style={{
+                width: 5, height: `${h * 0.5}px`,
+                background: 'linear-gradient(to top, var(--accent), var(--accent-alt))',
+                transformOrigin: 'bottom',
+                animationDuration: `${0.45 + i * 0.06}s`,
+                animationDelay: `${i * 0.04}s`,
+                boxShadow: '0 0 6px rgba(139,92,246,0.6)',
+              }} />
+          ))}
+        </div>
+
+        {/* Wordmark */}
+        <div style={{
+          fontSize: 26, fontWeight: 900, letterSpacing: '-0.02em',
+          background: 'linear-gradient(120deg, #a78bfa, #ec4899, #f97316)',
+          WebkitBackgroundClip: 'text', backgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+        }}>PlayLy</div>
+
+        {/* Rotating phrase */}
+        <p key={phraseIdx} className="fade-in text-xs font-medium"
+          style={{ color: 'rgba(255,255,255,0.45)', letterSpacing: '0.02em' }}>
+          {phrases[phraseIdx]}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
 // ROOT PAGE
 // ─────────────────────────────────────────────────────────
 export default function HomePage() {
   const { user, loading } = useAuth()
 
   if (loading) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center" style={{ background: 'var(--bg-base)' }}>
-        <div className="flex flex-col items-center gap-5">
-          <div className="flex items-end gap-1">
-            {[40, 75, 55, 90, 45, 80, 52, 95, 62].map((h, i) => (
-              <div key={i} className="eq-bar rounded-full"
-                style={{
-                  width: 5, height: `${h * 0.48}px`,
-                  background: 'linear-gradient(to top, var(--accent), var(--accent-alt))',
-                  transformOrigin: 'bottom',
-                  animationDuration: `${0.5 + i * 0.08}s`,
-                  animationDelay: `${i * 0.05}s`,
-                }} />
-            ))}
-          </div>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Loading PlayLy…</p>
-        </div>
-      </div>
-    )
+    return <PlayLyIntroScreen />
   }
 
   if (!user) return <LandingPage />

@@ -801,4 +801,21 @@ main { animation: fade-in 0.3s cubic-bezier(0.16,1,0.3,1); }
   100% { background-position: 200% center; }
 }
 
+/* ═══════════════════════════════════════════════════════════
+   PLAYER — fit-to-screen helpers
+   ═══════════════════════════════════════════════════════════ */
+/* Show EQ only on taller viewports so short screens don't overflow */
+.eq-compact\:block { display: none; }
+@media (min-height: 740px) {
+  .eq-compact\:block { display: block; }
+}
+
+/* Magic button — beat pulse scale animation (driven by inline CSS var) */
+@keyframes magic-beat-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.magic-btn-beat { animation: magic-beat-pop 0.28s ease-out; }
+
 /* v2.0-playly-fixes */

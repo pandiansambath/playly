@@ -100,14 +100,19 @@ function EqCanvas({ isPlaying, accentColor }: { isPlaying: boolean; accentColor:
 // MAGIC VISUALIZER CANVAS — soothing beat-reactive aura
 // Smooth breathing orbs + soft ripples that follow the beat
 // ═══════════════════════════════════════════════════════════
-function MagicCanvas({ accentColor }: { accentColor: string }) {
+function MagicCanvas({ accentColor, onBeat }: {
+  accentColor: string
+  onBeat?: (strength: number) => void
+}) {
   const canvasRef  = useRef<HTMLCanvasElement>(null)
   const rafRef     = useRef<number>(0)
   const prevEnergy = useRef(0)
+  const avgEnergy  = useRef(0)     // rolling average for adaptive threshold
   const beatTime   = useRef(0)
-  const hueShift   = useRef(270) // start near purple
+  const hueShift   = useRef(270)
   const breathe    = useRef(0)
-  // Active ripples spawned on each beat
+  // Particles that drift upward on each beat
+  const particles  = useRef<{ x: number; y: number; vx: number; vy: number; r: number; life: number; hue: number }[]>([])
   const ripples    = useRef<{ r: number; maxR: number; alpha: number; hue: number }[]>([])
 
   useEffect(() => {
@@ -132,22 +137,45 @@ function MagicCanvas({ accentColor }: { accentColor: string }) {
 
       if (analyser && dataArr) analyser.getByteFrequencyData(dataArr)
 
-      // Energy extraction
-      const bass   = dataArr ? (dataArr[1]+dataArr[2]+dataArr[3]+dataArr[4]) / (4*255) : 0.12
-      const mid    = dataArr ? (dataArr[8]+dataArr[12]+dataArr[16]) / (3*255) : 0.08
-      const energy = bass * 0.72 + mid * 0.28
+      // Energy extraction — bass (kick/sub), mid (snare/vox), high (hats)
+      const bass   = dataArr ? (dataArr[1]+dataArr[2]+dataArr[3]+dataArr[4]+dataArr[5]) / (5*255) : 0.12
+      const mid    = dataArr ? (dataArr[8]+dataArr[12]+dataArr[16]+dataArr[20]) / (4*255) : 0.08
+      const high   = dataArr ? (dataArr[40]+dataArr[60]+dataArr[80]) / (3*255) : 0.04
+      const energy = bass * 0.66 + mid * 0.28 + high * 0.06
 
-      // Beat detection — clean threshold
+      // Adaptive beat detection — use rolling average to pick threshold automatically
+      // Louder songs → higher threshold, quieter songs → still detect subtle beats
+      avgEnergy.current = avgEnergy.current * 0.985 + energy * 0.015
       const now    = performance.now()
-      const isBeat = energy > prevEnergy.current * 1.14 && energy > 0.07 && now - beatTime.current > 140
+      const threshold = Math.max(0.05, avgEnergy.current * 1.32)
+      const strength = energy / Math.max(0.001, avgEnergy.current) // how much above average
+      const isBeat = energy > threshold && energy > prevEnergy.current * 1.10 && now - beatTime.current > 120
       if (isBeat) {
         beatTime.current = now
-        ripples.current.push({ r: 0, maxR: Math.min(W,H) * 0.48, alpha: 0.55, hue: hueShift.current })
-        if (ripples.current.length > 5) ripples.current.shift()
+        const beatStrength = Math.min(1.4, Math.max(0.5, strength - 1))
+        ripples.current.push({ r: 0, maxR: Math.min(W,H) * (0.42 + beatStrength * 0.15), alpha: 0.45 + beatStrength * 0.2, hue: hueShift.current })
+        if (ripples.current.length > 6) ripples.current.shift()
+        // Spawn particles proportional to beat strength
+        const count = Math.round(3 + beatStrength * 5)
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2
+          const sp = 0.6 + Math.random() * 1.8
+          particles.current.push({
+            x: W/2 + Math.cos(angle) * 10,
+            y: H/2 + Math.sin(angle) * 10,
+            vx: Math.cos(angle) * sp,
+            vy: Math.sin(angle) * sp - 0.3,
+            r: 2 + Math.random() * 2.8,
+            life: 1,
+            hue: (hueShift.current + (Math.random()*60-30)) % 360,
+          })
+        }
+        if (particles.current.length > 80) particles.current.splice(0, particles.current.length - 80)
+        onBeat?.(beatStrength)
       }
-      prevEnergy.current = energy * 0.6 + prevEnergy.current * 0.4
-      hueShift.current   = (hueShift.current + 0.25 + energy * 1.2) % 360
-      breathe.current    = (breathe.current + 0.012 + energy * 0.04) % (Math.PI * 2)
+      prevEnergy.current = energy * 0.55 + prevEnergy.current * 0.45
+      hueShift.current   = (hueShift.current + 0.22 + energy * 1.4) % 360
+      breathe.current    = (breathe.current + 0.011 + energy * 0.05) % (Math.PI * 2)
 
       // Smooth background fade
       ctx.fillStyle = 'rgba(4,4,14,0.18)'
@@ -194,8 +222,8 @@ function MagicCanvas({ accentColor }: { accentColor: string }) {
       // ── Layer 4: Beat ripples — smooth expanding rings ──
       ripples.current = ripples.current.filter(rp => rp.alpha > 0.01)
       ripples.current.forEach(rp => {
-        rp.r     += (rp.maxR - rp.r) * 0.055   // ease-out expansion
-        rp.alpha *= 0.956                         // smooth fade
+        rp.r     += (rp.maxR - rp.r) * 0.055
+        rp.alpha *= 0.956
         const width = rp.maxR * 0.045
         const gr2   = ctx.createRadialGradient(cx, cy, rp.r - width, cx, cy, rp.r + width)
         gr2.addColorStop(0,   'transparent')
@@ -203,6 +231,22 @@ function MagicCanvas({ accentColor }: { accentColor: string }) {
         gr2.addColorStop(1,   'transparent')
         ctx.beginPath(); ctx.arc(cx, cy, rp.r, 0, Math.PI*2)
         ctx.fillStyle = gr2; ctx.fill()
+      })
+
+      // ── Layer 5: Floating particles — beat-spawned bubbles ──
+      particles.current = particles.current.filter(p => p.life > 0.02)
+      particles.current.forEach(p => {
+        p.x += p.vx
+        p.y += p.vy
+        p.vy -= 0.015          // gentle upward drift
+        p.vx *= 0.985
+        p.life *= 0.978
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3)
+        g.addColorStop(0,   `hsla(${p.hue},100%,78%,${p.life})`)
+        g.addColorStop(0.4, `hsla(${p.hue},95%,62%,${p.life * 0.5})`)
+        g.addColorStop(1,   'transparent')
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 3, 0, Math.PI*2)
+        ctx.fillStyle = g; ctx.fill()
       })
     }
     draw()
@@ -257,6 +301,101 @@ function SeekBar({
           opacity-0 group-hover:opacity-100 transition-opacity"
           style={{ left: `calc(${pct}% - 8px)`, boxShadow: `0 0 12px rgba(${accent},0.9)` }} />
       </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// VOLUME CONTROL — smooth, visually pleasing
+// Drag across the entire bar. Shows animated fill + glowing thumb.
+// ═══════════════════════════════════════════════════════════
+function VolumeControl({ value, accentColor, onChange }: {
+  value: number; accentColor: string; onChange: (v: number) => void
+}) {
+  const barRef = useRef<HTMLDivElement>(null)
+  const dragging = useRef(false)
+  const [showTip, setShowTip] = useState(false)
+
+  function pctFromX(clientX: number): number {
+    const el = barRef.current
+    if (!el) return value
+    const r = el.getBoundingClientRect()
+    return Math.max(0, Math.min(1, (clientX - r.left) / r.width))
+  }
+
+  function onDown(e: React.PointerEvent) {
+    dragging.current = true
+    ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+    onChange(pctFromX(e.clientX))
+    setShowTip(true)
+  }
+  function onMove(e: React.PointerEvent) {
+    if (!dragging.current) return
+    onChange(pctFromX(e.clientX))
+  }
+  function onUp() { dragging.current = false; setShowTip(false) }
+
+  const pct = Math.round(value * 100)
+  const muted = value <= 0.001
+
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        onClick={() => onChange(muted ? 0.8 : 0)}
+        className="flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all active:scale-90"
+        style={{
+          background: muted ? 'rgba(255,255,255,0.04)' : `rgba(${accentColor},0.14)`,
+          border: `1px solid ${muted ? 'rgba(255,255,255,0.1)' : `rgba(${accentColor},0.3)`}`,
+          color: muted ? 'rgba(255,255,255,0.35)' : `rgb(${accentColor})`,
+        }}>
+        {muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+      </button>
+      <div
+        ref={barRef}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerLeave={() => setShowTip(false)}
+        onPointerEnter={() => setShowTip(true)}
+        className="flex-1 relative cursor-pointer group"
+        style={{ padding: '10px 0', touchAction: 'none' }}>
+        {/* track */}
+        <div className="relative h-1.5 rounded-full transition-all group-hover:h-2.5"
+          style={{ background: 'rgba(255,255,255,0.08)' }}>
+          {/* fill */}
+          <div className="absolute inset-y-0 left-0 rounded-full"
+            style={{
+              width: `${pct}%`,
+              background: `linear-gradient(90deg, rgba(${accentColor},0.5), rgb(${accentColor}))`,
+              boxShadow: `0 0 14px rgba(${accentColor},0.5)`,
+              transition: dragging.current ? 'none' : 'width 0.15s ease-out',
+            }} />
+          {/* thumb */}
+          <div
+            className="absolute top-1/2 -translate-y-1/2 rounded-full bg-white transition-all"
+            style={{
+              left: `calc(${pct}% - 8px)`,
+              width: 16, height: 16,
+              boxShadow: `0 0 0 2px rgba(${accentColor},0.5), 0 2px 10px rgba(0,0,0,0.6), 0 0 18px rgba(${accentColor},0.6)`,
+              transform: `translateY(-50%) scale(${showTip ? 1.15 : 1})`,
+            }} />
+          {/* tooltip */}
+          {showTip && (
+            <div className="absolute -top-7 left-0 pointer-events-none" style={{ left: `calc(${pct}% - 16px)` }}>
+              <div className="px-2 py-0.5 rounded-md text-[10px] font-bold text-white"
+                style={{
+                  background: `rgba(${accentColor},0.9)`,
+                  boxShadow: `0 2px 10px rgba(${accentColor},0.5)`,
+                  minWidth: 32, textAlign: 'center',
+                }}>{pct}</div>
+            </div>
+          )}
+        </div>
+      </div>
+      <span className="text-[10px] font-bold flex-shrink-0 tabular-nums"
+        style={{ color: muted ? 'rgba(255,255,255,0.25)' : `rgba(${accentColor},0.75)`, width: 28, textAlign: 'right' }}>
+        {pct}
+      </span>
     </div>
   )
 }
@@ -340,10 +479,24 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
   const videoStartWall      = useRef(0)
   const latestVideoTime     = useRef(0)
   const [magicOn, setMagicOn] = useState(false)
+  const [beatPulse, setBeatPulse] = useState(0)
   const [isVideoPlaying, setIsVideoPlaying] = useState(false)
   const [isVideoLoaded, setIsVideoLoaded]   = useState(false)  // ← FIX 11
   const [vidTime, setVidTime]               = useState(0)      // ← FIX 4d
   const [analyserReady, setAnalyserReady] = useState(!!_analyser)
+  const magicBtnRef = useRef<HTMLButtonElement>(null)
+
+  function onMagicBeat(strength: number) {
+    // Drive button pulse via CSS animation
+    const btn = magicBtnRef.current
+    if (btn) {
+      btn.classList.remove('magic-btn-beat')
+      // Force reflow so animation re-triggers
+      void btn.offsetWidth
+      btn.classList.add('magic-btn-beat')
+    }
+    setBeatPulse(strength)
+  }
 
   function ensureAnalyser() {
     if (!_analyser) { initAnalyser(); resumeCtx(); setAnalyserReady(!!_analyser) }
@@ -481,6 +634,7 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
       {/* ── Expanded player backdrop ──────────────────────── */}
       <div className="fixed inset-0 z-[150] flex flex-col overflow-hidden slide-up-full"
         style={{
+          height: '100dvh',
           background: magicOn
             ? 'rgba(3,3,12,0.15)'    // near-transparent when magic — canvas shows through
             : `radial-gradient(ellipse at 50% -10%, rgba(${accentColor},0.45) 0%, transparent 55%),
@@ -489,7 +643,7 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
         }}>
 
         {/* MAGIC CANVAS — sits behind everything inside player */}
-        {magicOn && <MagicCanvas accentColor={accentColor} />}
+        {magicOn && <MagicCanvas accentColor={accentColor} onBeat={onMagicBeat} />}
 
         {/* Spotlight vignette when magic is on */}
         {magicOn && (
@@ -509,8 +663,8 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
           </>
         )}
 
-        {/* Main content */}
-        <div className="relative flex flex-col h-full max-w-md mx-auto w-full px-5 overflow-y-auto no-scrollbar" style={{ zIndex: 10, overscrollBehavior: 'contain' }}>
+        {/* Main content — fits to screen, no scroll */}
+        <div className="relative flex flex-col h-full max-w-md mx-auto w-full px-4 sm:px-5 no-scrollbar" style={{ zIndex: 10, overscrollBehavior: 'contain', overflow: 'hidden' }}>
 
           {/* Top bar */}
           <div className="flex items-center justify-between pt-4 pb-3 flex-shrink-0">
@@ -524,13 +678,18 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
               {queueSource && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{queueSource}</p>}
             </div>
             <div className="flex items-center gap-2">
-              {/* Magic button */}
+              {/* Magic button — beat-reactive when magic mode is on */}
               <button
+                ref={magicBtnRef}
                 onClick={() => { ensureAnalyser(); setMagicOn(v => !v) }}
                 className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 ${magicOn ? 'magic-btn-active' : 'magic-btn-idle'}`}
                 title="Magic Mode">
                 <Sparkles size={15}
-                  style={{ color: magicOn ? 'white' : 'rgba(255,255,255,0.45)' }}
+                  style={{
+                    color: magicOn ? 'white' : 'rgba(255,255,255,0.45)',
+                    transform: magicOn ? `scale(${1 + beatPulse * 0.2})` : 'none',
+                    transition: 'transform 0.15s ease-out',
+                  }}
                   strokeWidth={magicOn ? 2 : 1.5}
                 />
               </button>
@@ -552,13 +711,13 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
             </div>
           </div>
 
-          {/* Art / Video */}
-          <div className="flex items-center justify-center py-2 flex-shrink-0">
+          {/* Art / Video — flexible, never pushes content off-screen */}
+          <div className="flex items-center justify-center flex-1 min-h-0 py-1">
             <div className="relative overflow-hidden shadow-2xl"
               style={{
-                width: showVideo ? 'min(88vw, 340px)' : 'min(55vw, 210px)',
+                width: showVideo ? 'min(86vw, 340px)' : 'min(52vw, 220px, 28dvh)',
                 aspectRatio: showVideo ? '16/9' : '1/1',
-                maxHeight: showVideo ? '42vw' : '210px',
+                maxHeight: showVideo ? 'min(42vw, 26dvh)' : 'min(55vw, 28dvh)',
                 borderRadius: showVideo ? '18px' : '22px',
                 boxShadow: `0 30px 80px rgba(${accentColor},0.4), 0 8px 30px rgba(0,0,0,0.8)`,
                 transition: 'all 0.45s cubic-bezier(0.16,1,0.3,1)',
@@ -625,17 +784,17 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
             </div>
           </div>
 
-          {/* EQ bars (audio mode only) */}
+          {/* EQ bars — hidden on short viewports to keep player on one screen */}
           {!showVideo && !magicOn && (
-            <div className="flex-shrink-0 my-1">
+            <div className="flex-shrink-0 hidden eq-compact:block">
               <EqCanvas isPlaying={isPlaying} accentColor={accentColor} />
             </div>
           )}
 
           {/* Song info */}
-          <div className="text-center mb-3 flex-shrink-0 fade-in" key={currentSong.id}>
+          <div className="text-center mb-2 flex-shrink-0 fade-in" key={currentSong.id}>
             <h2 className="text-base font-bold leading-snug line-clamp-2 mb-0.5">{currentSong.title}</h2>
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{currentSong.movie_name || 'Unknown'}</p>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{currentSong.movie_name || 'Unknown'}</p>
           </div>
 
           {/* Seek bar — FIX 4d: shown in BOTH audio and video modes */}
@@ -687,18 +846,10 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
             </button>
           </div>
 
-          {/* Volume — label says "App Volume" for clarity (issue 6) */}
-          <div className="flex items-center gap-3 mb-3 flex-shrink-0">
-            <button onClick={() => setVolume(volume > 0 ? 0 : 0.8)} style={{ color: 'rgba(255,255,255,0.35)' }}>
-              {volume > 0 ? <Volume2 size={15} /> : <VolumeX size={15} />}
-            </button>
-            <input type="range" min={0} max={1} step={0.02} value={volume}
-              onChange={e => setVolume(parseFloat(e.target.value))}
-              className="flex-1"
-              style={{ background: `linear-gradient(to right,rgb(${accentColor}) 0%,rgb(${accentColor}) ${volume*100}%,rgba(255,255,255,0.12) ${volume*100}%,rgba(255,255,255,0.12) 100%)` }} />
-            <Volume2 size={15} style={{ color: 'rgba(255,255,255,0.35)' }} />
+          {/* Volume — smooth visual bar (FX5) */}
+          <div className="flex-shrink-0 mb-3">
+            <VolumeControl accentColor={accentColor} value={volume} onChange={setVolume} />
           </div>
-          <p className="text-center text-[9px] mb-3 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.15)' }}>App Volume</p>
 
           {/* Download section */}
           <DownloadSection accentColor={accentColor} />

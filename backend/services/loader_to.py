@@ -11,6 +11,7 @@ import asyncio
 import subprocess
 import tempfile
 import os
+import time as _time
 import httpx
 
 _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -52,11 +53,25 @@ def _probe_duration(mp3: bytes) -> int:
         return 0
 
 
-async def download_audio_via_loader(youtube_id: str) -> tuple[bytes, dict]:
-    """Returns (mp3_bytes, info_dict) mimicking yt-dlp's extract_info shape."""
+async def download_audio_via_loader(youtube_id: str, on_progress=None) -> tuple[bytes, dict]:
+    """Returns (mp3_bytes, info_dict) mimicking yt-dlp's extract_info shape.
+
+    If ``on_progress`` is given, it is awaited as ``on_progress(stage, pct, extra_dict)``
+    where stage ∈ {starting, converting, downloading, probing}. Exceptions in the
+    callback are swallowed — progress reporting must never break the download.
+    """
+    async def emit(stage: str, pct: int, **extra):
+        if not on_progress:
+            return
+        try:
+            await on_progress(stage, pct, extra)
+        except Exception:
+            pass
+
     yt_url = f"https://www.youtube.com/watch?v={youtube_id}"
     async with httpx.AsyncClient(headers=_HEADERS, timeout=30, verify=False) as client:
-        # Kick off conversion
+        await emit("starting", 0)
+
         r = await client.get(_START_URL, params={"format": "mp3", "url": yt_url})
         r.raise_for_status()
         data = r.json()
@@ -64,18 +79,19 @@ async def download_audio_via_loader(youtube_id: str) -> tuple[bytes, dict]:
             raise RuntimeError(f"loader.to rejected request: {data}")
         job_id = data["id"]
 
-        # Poll progress (try both known hosts)
         download_url = None
-        last_err = None
-        # Poll aggressively — tight intervals early, back off slightly after 10s.
+        last_err: Exception | None = None
         for host in _PROGRESS_HOSTS:
-            for i in range(80):  # ~2 min worst-case
-                await asyncio.sleep(1.2 if i < 8 else 2.5)
+            for i in range(90):
+                await asyncio.sleep(0.9 if i < 12 else 2.0)
                 try:
                     pr = await client.get(f"{host}/ajax/progress.php", params={"id": job_id})
                     if pr.status_code != 200:
                         continue
                     prog = pr.json()
+                    raw = prog.get("progress", 0) or 0
+                    pct = max(1, min(99, int(raw / 10)))
+                    await emit("converting", pct, text=prog.get("text", ""))
                     if prog.get("success") == 1 and prog.get("download_url"):
                         download_url = prog["download_url"]
                         break
@@ -85,21 +101,37 @@ async def download_audio_via_loader(youtube_id: str) -> tuple[bytes, dict]:
                 break
         if not download_url:
             raise RuntimeError(f"loader.to conversion timed out ({last_err})")
+        await emit("converting", 100)
 
-        # Fetch MP3 bytes
-        mr = await client.get(download_url, timeout=180,
-                              headers={"User-Agent": _UA, "Referer": "https://loader.to/"})
-        mr.raise_for_status()
-        mp3 = mr.content
-        if len(mp3) < 10_000 or not mp3[:4] in (b"ID3\x03", b"ID3\x04") and mp3[:2] != b"\xff\xfb" and mp3[:2] != b"\xff\xf3":
-            # Basic sanity: ID3 header or MPEG frame sync
-            if len(mp3) < 10_000:
-                raise RuntimeError(f"loader.to returned tiny payload ({len(mp3)} bytes)")
+        chunks: list[bytes] = []
+        received = 0
+        last_t = _time.monotonic()
+        last_bytes = 0
+        await emit("downloading", 0, bytes=0, total=0, speed=0)
+        async with client.stream(
+            "GET", download_url, timeout=180,
+            headers={"User-Agent": _UA, "Referer": "https://loader.to/"},
+        ) as resp:
+            resp.raise_for_status()
+            total = int(resp.headers.get("content-length", 0) or 0)
+            async for chunk in resp.aiter_bytes(chunk_size=64 * 1024):
+                chunks.append(chunk)
+                received += len(chunk)
+                now = _time.monotonic()
+                if now - last_t >= 0.25:
+                    speed = (received - last_bytes) / (now - last_t)
+                    last_t = now
+                    last_bytes = received
+                    pct = int(received * 100 / total) if total else min(99, received // 50_000)
+                    await emit("downloading", pct, bytes=received, total=total, speed=int(speed))
+        mp3 = b"".join(chunks)
+        if len(mp3) < 10_000:
+            raise RuntimeError(f"loader.to returned tiny payload ({len(mp3)} bytes)")
+        await emit("downloading", 100, bytes=len(mp3), total=len(mp3), speed=0)
+        await emit("probing", 0)
 
-        # Metadata
         meta = await _oembed(client, youtube_id)
 
-    # Extract title/movie from HTML text already returned? title is in oembed
     title = meta.get("title", "")
     thumb = meta.get("thumbnail_url") or f"https://i.ytimg.com/vi/{youtube_id}/hqdefault.jpg"
     duration = _probe_duration(mp3)
