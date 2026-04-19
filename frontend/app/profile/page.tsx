@@ -93,17 +93,27 @@ export default function ProfilePage() {
     if (!file || !user) return
     setUploading(true)
     try {
-      const ext  = file.name.split('.').pop()
+      const ext  = (file.name.split('.').pop() || 'jpg').toLowerCase()
       const path = `${user.id}.${ext}`
-      await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+      // supabase-js v2 does not throw on HTTP errors — inspect {error} explicitly.
+      const up = await supabase.storage.from('avatars').upload(path, file, {
+        upsert: true,
+        contentType: file.type || 'image/jpeg',
+        cacheControl: '0',
+      })
+      if (up.error) throw up.error
       const { data } = supabase.storage.from('avatars').getPublicUrl(path)
       const freshUrl = `${data.publicUrl}?t=${Date.now()}`
-      await supabase.from('users').update({ avatar_url: freshUrl }).eq('id', user.id)
-      setProfile((p: any) => ({ ...p, avatar_url: freshUrl }))
+      const upd = await supabase.from('users').update({ avatar_url: freshUrl }).eq('id', user.id)
+      if (upd.error) throw upd.error
+      setProfile((p: any) => ({ ...(p || {}), avatar_url: freshUrl }))
       showToast('Avatar updated!', true)
-    } catch {
-      showToast('Upload failed — try a smaller image', false)
-    } finally { setUploading(false) }
+    } catch (err: any) {
+      showToast(err?.message?.slice(0, 60) || 'Upload failed — try a smaller image', false)
+    } finally {
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
   }
 
   async function clearHistory() {
@@ -150,7 +160,8 @@ export default function ProfilePage() {
                 <div className="w-20 h-20 rounded-3xl overflow-hidden avatar-ring"
                   style={{ background: 'var(--bg-raised)' }}>
                   {avatarUrl
-                    ? <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                    ? <img key={avatarUrl} src={avatarUrl} alt="" className="w-full h-full object-cover"
+                        onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
                     : <div className="w-full h-full flex items-center justify-center text-3xl font-black gradient-text">{initials}</div>
                   }
                 </div>

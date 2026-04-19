@@ -1,9 +1,22 @@
 import re
+import asyncio
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from services.auth import get_current_user
 from services.supabase_client import supabase
 from services.ytdlp import download_audio
+
+
+async def _prewarm_cdn(url: str) -> None:
+    """Fetch the freshly-uploaded file once so the Supabase CDN edge has it
+    cached before the user's browser asks. Silent on failure — this is best
+    effort and must never block the response."""
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as c:
+            await c.get(url, headers={"Range": "bytes=0-65535"})
+    except Exception:
+        pass
 
 router = APIRouter()
 
@@ -44,6 +57,10 @@ async def download_song(req: DownloadRequest, user=Depends(get_current_user)):
         raise HTTPException(500, f"Storage upload failed: {e}")
 
     cdn_url = supabase.storage.from_("songs").get_public_url(storage_path)
+
+    # Pre-warm the Supabase CDN edge so the first /play request is instant
+    # instead of hitting origin (~10s on free tier).
+    asyncio.create_task(_prewarm_cdn(cdn_url))
 
     # 4. Save metadata
     song_data = {

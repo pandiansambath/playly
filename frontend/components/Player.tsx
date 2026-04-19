@@ -510,7 +510,7 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
         )}
 
         {/* Main content */}
-        <div className="relative flex flex-col h-full max-w-md mx-auto w-full px-5 overflow-y-auto" style={{ zIndex: 10 }}>
+        <div className="relative flex flex-col h-full max-w-md mx-auto w-full px-5 overflow-y-auto no-scrollbar" style={{ zIndex: 10, overscrollBehavior: 'contain' }}>
 
           {/* Top bar */}
           <div className="flex items-center justify-between pt-4 pb-3 flex-shrink-0">

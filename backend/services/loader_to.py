@@ -67,9 +67,10 @@ async def download_audio_via_loader(youtube_id: str) -> tuple[bytes, dict]:
         # Poll progress (try both known hosts)
         download_url = None
         last_err = None
+        # Poll aggressively — tight intervals early, back off slightly after 10s.
         for host in _PROGRESS_HOSTS:
-            for _ in range(60):  # up to ~3 minutes
-                await asyncio.sleep(3)
+            for i in range(80):  # ~2 min worst-case
+                await asyncio.sleep(1.2 if i < 8 else 2.5)
                 try:
                     pr = await client.get(f"{host}/ajax/progress.php", params={"id": job_id})
                     if pr.status_code != 200:

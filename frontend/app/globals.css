@@ -160,6 +160,10 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
+/* Utility: hide scrollbar visually while keeping scroll behaviour. */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
 /* ═══════════════════════════════════════════════════════════
    KEYFRAMES
    ═══════════════════════════════════════════════════════════ */
@@ -407,27 +411,44 @@ body {
    ═══════════════════════════════════════════════════════════ */
 input[type="range"] {
   -webkit-appearance: none;
-  height: 4px;
+  appearance: none;
+  height: 5px;
   border-radius: 99px;
   outline: none;
   cursor: pointer;
-  transition: height 0.15s;
+  transition: height 0.18s ease;
 }
-input[type="range"]:hover { height: 6px; }
+input[type="range"]:hover,
+input[type="range"]:focus-visible { height: 8px; }
+
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
+  appearance: none;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: white;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.08);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, width 0.15s, height 0.15s;
 }
-input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.25);
-  box-shadow: 0 2px 12px var(--glow);
+input[type="range"]:hover::-webkit-slider-thumb,
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  box-shadow: 0 3px 14px var(--glow), 0 0 0 3px rgba(255,255,255,0.08);
 }
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.08); }
+
+/* Firefox parity */
+input[type="range"]::-moz-range-thumb {
+  width: 14px; height: 14px; border: none;
+  border-radius: 50%; background: white; cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.55);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+input[type="range"]:hover::-moz-range-thumb { transform: scale(1.18); }
+input[type="range"]::-moz-range-track { background: transparent; }
 
 /* ═══════════════════════════════════════════════════════════
    TRANSITIONS

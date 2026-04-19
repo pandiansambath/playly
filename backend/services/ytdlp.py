@@ -5,6 +5,11 @@ import shutil
 from pathlib import Path
 
 SKIP_SSL = os.getenv("SKIP_SSL_VERIFY", "false").lower() == "true"
+# When running on a bot-flagged datacenter IP (Azure/AWS/GCP), yt-dlp always
+# fails and each player_client attempt costs ~3-5s. Default to skipping yt-dlp
+# and going straight to the free fallback; flip to "false" only if deploying
+# to an environment YouTube does not flag.
+SKIP_YTDLP = os.getenv("SKIP_YTDLP", "true").lower() == "true"
 
 # Optional: mount a YouTube cookies file as a K8s secret
 # Then set: YOUTUBE_COOKIE_FILE=/etc/yt-cookies/cookies.txt
@@ -68,6 +73,12 @@ async def download_audio(youtube_id: str, quality: str = "192"):
          loader.to + p.savenow.to public API — works from bot-flagged
          datacenter IPs where yt-dlp alone cannot.
     """
+    # On bot-flagged IPs, every player_client will fail — skip the ~20s dance
+    # and go straight to the public fallback chain.
+    if SKIP_YTDLP:
+        from .loader_to import download_audio_via_loader
+        return await download_audio_via_loader(youtube_id)
+
     url = f"https://www.youtube.com/watch?v={youtube_id}"
     last_error = None
     bot_blocked = False
