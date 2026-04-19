@@ -60,9 +60,17 @@ def _build_opts(quality: str, tmp: str, player_clients: list) -> dict:
 
 
 async def download_audio(youtube_id: str, quality: str = "192"):
-    """Download YouTube audio as MP3."""
+    """Download YouTube audio as MP3.
+
+    Strategy:
+      1. Try every yt-dlp player_client profile (fastest; native quality control)
+      2. On bot-detection / login-required errors, fall back to the free
+         loader.to + p.savenow.to public API — works from bot-flagged
+         datacenter IPs where yt-dlp alone cannot.
+    """
     url = f"https://www.youtube.com/watch?v={youtube_id}"
     last_error = None
+    bot_blocked = False
 
     for clients in PLAYER_CLIENTS:
         with tempfile.TemporaryDirectory() as tmp:
@@ -78,18 +86,25 @@ async def download_audio(youtube_id: str, quality: str = "192"):
             except Exception as e:
                 last_error = e
                 err_str = str(e).lower()
-                # If it's a bot/auth error OR a format isn't available for this specific client (like shorts on tv_embedded), try next
-                if "sign in" in err_str or "bot" in err_str or "confirm" in err_str or "format is not available" in err_str or "read-only" in err_str:
+                if any(k in err_str for k in ("sign in", "bot", "confirm", "login required", "format is not available", "read-only")):
+                    if any(k in err_str for k in ("sign in", "bot", "confirm", "login required")):
+                        bot_blocked = True
                     continue
-                # For other errors (private video, removed, etc.), fail fast
+                # Hard failures (private, removed, geo-blocked): don't waste a fallback.
                 raise
 
-    # All clients failed
-    err_msg = str(last_error) if last_error else "All download strategies failed"
-    if "sign in" in err_msg.lower() or "bot" in err_msg.lower():
-        raise RuntimeError(
-            "This video requires YouTube authentication or is blocking the bot."
-        )
+    # yt-dlp exhausted. Try free public fallback for bot-block scenarios.
+    if bot_blocked or last_error is None or any(
+        k in str(last_error).lower() for k in ("sign in", "bot", "confirm", "login required")
+    ):
+        from .loader_to import download_audio_via_loader
+        try:
+            return await download_audio_via_loader(youtube_id)
+        except Exception as fallback_err:
+            raise RuntimeError(
+                f"YouTube blocked direct download and fallback failed: {fallback_err}"
+            ) from last_error
+
     raise last_error or RuntimeError("Download failed")
 
 
