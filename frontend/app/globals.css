@@ -476,6 +476,39 @@ main { animation: fade-in 0.3s cubic-bezier(0.16,1,0.3,1); }
    ═══════════════════════════════════════════════════════════ */
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
+/* Height of the mobile bottom tab bar (0 on desktop — nav is top).
+   Used by the mini-player to offset itself above the tabs, and by
+   layout padding so content isn't hidden behind the stack. */
+:root { --tab-bar-offset: 0px; }
+@media (max-width: 767px) {
+  :root { --tab-bar-offset: calc(58px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DYNAMIC BACKGROUND ANIMATIONS (stars / sun / aurora / bg)
+   ═══════════════════════════════════════════════════════════ */
+@keyframes star-twinkle {
+  0%,100% { opacity: 0.25; }
+  50%     { opacity: 1;    }
+}
+@keyframes aurora-shift {
+  0%   { transform: translateX(0)     translateY(0); }
+  50%  { transform: translateX(-3%)   translateY(-1%); }
+  100% { transform: translateX(2%)    translateY(1%);  }
+}
+@keyframes sun-drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-20px, 12px) scale(1.04); }
+}
+@keyframes bg-breathe {
+  0%,100% { transform: scale(1.28); opacity: var(--bg-op, 0.28); }
+  50%     { transform: scale(1.34); opacity: calc(var(--bg-op, 0.28) + 0.06); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [style*="star-twinkle"], [style*="aurora-shift"],
+  [style*="sun-drift"],    [style*="bg-breathe"] { animation: none !important; }
+}
+
 /* ═══════════════════════════════════════════════════════════
    AURORA MESH BACKGROUND (landing page)
    ═══════════════════════════════════════════════════════════ */

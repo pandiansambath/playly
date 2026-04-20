@@ -38,20 +38,37 @@ export function getPlayUrl(supabaseUrl: string): string {
   return blobUrlCache.get(supabaseUrl) ?? supabaseUrl
 }
 
+// Warm CDN edge by sending a cheap HEAD request (no body transfer).
+// Subsequent GETs from any client hit the warm edge cache.
+async function warmCdn(url: string) {
+  try { await fetch(url, { method: 'HEAD', cache: 'force-cache' }) } catch {}
+}
+
 export function preloadSongs(songs: Song[]) {
   const currentUrl = getAudio()?.src
+  // 1) Warm ALL song URLs at the CDN edge immediately — HEAD is tiny.
+  //    This fixes the "3-4s cold start" when a user revisits the site.
+  songs.forEach(s => {
+    if (s.supabase_url && s.supabase_url !== currentUrl) warmCdn(s.supabase_url)
+  })
+  // 2) Full blob download — first 3 in parallel, rest staggered 500ms
   songs.forEach((song, i) => {
     const url = song.supabase_url
-    if (url === currentUrl) return
+    if (!url || url === currentUrl) return
     if (blobUrlCache.has(url) || fetchingCache.has(url)) return
-    if (!preloadCache.has(url)) {
-      const a = new Audio()
-      a.preload = 'none'  // don't double-fetch, we handle it below
-      preloadCache.set(url, a)
-    }
-    // Stagger downloads 800ms apart — first song downloads immediately
-    setTimeout(() => downloadToBlob(url), i * 800)
+    if (!preloadCache.has(url)) preloadCache.set(url, new Audio())
+    const delay = i < 3 ? 0 : (i - 2) * 500
+    setTimeout(() => downloadToBlob(url), delay)
   })
+}
+
+// Eagerly download a specific song's blob now — no stagger.
+// Used when a new song starts so the FOLLOWING song is always ready.
+export function preloadNow(url: string) {
+  if (!url) return
+  if (blobUrlCache.has(url) || fetchingCache.has(url)) return
+  warmCdn(url)
+  downloadToBlob(url)
 }
 
 // ─── Media Session ─────────────────────────────────────────────────────────────
@@ -118,48 +135,42 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const audio = getAudio()
     if (!audio) return
 
-    const oldHandler = (audio as any)._playHandler
-    if (oldHandler) {
-      audio.removeEventListener('canplay', oldHandler)
-      delete (audio as any)._playHandler
-    }
-
     set({ currentSong: song, queue, isPlaying: false, buffering: true,
           currentTime: 0, showVideo: false,
           accentColor: getSongColor(song.youtube_id), queueSource: source })
-    updateMediaSession(song, false)
+    // Tell the OS media session we're playing — keeps the session active
+    // in the background so subsequent auto-advances aren't blocked.
+    updateMediaSession(song, true)
 
-    // Use blob URL if already downloaded — instant seek, no network
     const playUrl = getPlayUrl(song.supabase_url)
 
-    if (audio.src === playUrl) {
+    // Browser will play automatically as soon as data is buffered.
+    // This works reliably in background (screen off) where explicit
+    // play() calls on canplay can be throttled or rejected.
+    audio.autoplay = true
+    audio.volume   = get().volume
+
+    if (audio.src !== playUrl) {
+      audio.src = playUrl
+      audio.load()
+    } else {
       audio.currentTime = 0
-      audio.volume = get().volume
-      audio.play().catch(console.error)
-      return
     }
+    // Best-effort explicit play — falls back to autoplay if rejected
+    audio.play().catch(() => {})
 
-    audio.src    = playUrl
-    audio.volume = get().volume
+    // If we're on the original URL, keep downloading the blob in the background.
+    if (!playUrl.startsWith('blob:')) downloadToBlob(song.supabase_url)
 
-    // If blob URL — data is local, play immediately
-    if (playUrl.startsWith('blob:')) {
-      audio.play().catch(console.error)
-      return
-    }
-
-    // Original URL — wait for canplay, also start downloading to blob in background
-    downloadToBlob(song.supabase_url)
-    audio.load()
-    const onCanPlay = () => {
-      audio.removeEventListener('canplay', onCanPlay)
-      delete (audio as any)._playHandler
-      if (usePlayerStore.getState().currentSong?.id === song.id) {
-        audio.play().catch(console.error)
+    // Eagerly cache the NEXT song(s) so auto-advance past song 2 is instant,
+    // even when the tab is backgrounded and the network is throttled.
+    if (queue.length > 1) {
+      const idx = queue.findIndex(s => s.id === song.id)
+      for (let i = 1; i <= 2; i++) {
+        const nxt = queue[(idx + i) % queue.length]
+        if (nxt) preloadNow(nxt.supabase_url)
       }
     }
-    ;(audio as any)._playHandler = onCanPlay
-    audio.addEventListener('canplay', onCanPlay)
   },
 
   setBuffering: (v) => set({ buffering: v }),

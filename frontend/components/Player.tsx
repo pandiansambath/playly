@@ -128,6 +128,12 @@ function MagicCanvas({ accentColor, onBeat }: {
   const breathe    = useRef(0)
   const wavePhase  = useRef(0)
   const ambSpawn   = useRef(0)
+  const beatCount  = useRef(0)
+  const lastSplit  = useRef(0)
+  const initialFired = useRef(false)
+  // Slow-drifting gravity point the ambient bubbles coalesce toward.
+  // Moves on a Lissajous path so groups re-form in different spots.
+  const gravity    = useRef({ x: 0, y: 0, t: 0 })
 
   const bubbles = useRef<Bubble[]>([])
   const ripples = useRef<{ r: number; maxR: number; alpha: number; hue: number; cx: number; cy: number }[]>([])
@@ -175,32 +181,91 @@ function MagicCanvas({ accentColor, onBeat }: {
       const cy = H / 2
       const maxD = Math.hypot(cx, cy) // distance to corner
 
-      if (isBeat) {
-        beatTime.current = now
-        const beatStrength = Math.min(1.4, Math.max(0.5, strength - 1))
-        // Ripple radiates to the furthest corner so it's always full-screen
+      // ── Initial dramatic burst on first frame (magic click opens with a bang) ──
+      if (!initialFired.current) {
+        initialFired.current = true
         ripples.current.push({
-          r: 0, maxR: maxD * 1.05,
-          alpha: 0.38 + beatStrength * 0.22, hue: hueShift.current,
-          cx, cy,
+          r: 0, maxR: maxD * 1.05, alpha: 0.55, hue: hueShift.current, cx, cy,
         })
-        if (ripples.current.length > 5) ripples.current.shift()
-
-        // Beat burst: 14–22 bubbles fired outward in a ring, velocities
-        // sized so they actually *reach* the edge before dying.
-        const count = Math.round(14 + beatStrength * 8)
-        const baseSpeed = (maxD / 90) * (0.9 + beatStrength * 0.6) // pixels/frame ~ reach edge in 90 frames
+        const count = 26
+        const baseSpeed = (maxD / 75)
         for (let i = 0; i < count; i++) {
-          const angle = (i / count) * Math.PI * 2 + Math.random() * 0.18
-          const sp = baseSpeed * (0.85 + Math.random() * 0.35)
+          const angle = (i / count) * Math.PI * 2
+          const sp = baseSpeed * (0.9 + Math.random() * 0.4)
           bubbles.current.push({
             x: cx, y: cy,
-            vx: Math.cos(angle) * sp,
-            vy: Math.sin(angle) * sp,
-            r: 2.5 + Math.random() * 3 + beatStrength * 2,
-            life: 1,
+            vx: Math.cos(angle) * sp, vy: Math.sin(angle) * sp,
+            r: 3 + Math.random() * 3, life: 1,
             hue: (hueShift.current + (Math.random()*80-40)) % 360,
             kind: 'burst',
+          })
+        }
+      }
+
+      if (isBeat) {
+        beatTime.current = now
+        beatCount.current++
+        const beatStrength = Math.min(1.4, Math.max(0.5, strength - 1))
+
+        // Weak beats: just a small inner ripple + bubbles get a gentle push
+        // toward the gravity point so the group tightens rhythmically.
+        // Strong beats (or every 5th): EXPLOSION — ambient swarm converts to
+        // burst and flies out to the edges, plus fresh bubbles fire.
+        const isExplosion =
+          (beatStrength > 0.95 || beatCount.current - lastSplit.current >= 5) &&
+          now - lastSplit.current > 1800
+
+        // Always emit a ripple on beat, size scaled by strength
+        ripples.current.push({
+          r: 0,
+          maxR: maxD * (isExplosion ? 1.05 : 0.45 + beatStrength * 0.3),
+          alpha: 0.25 + beatStrength * 0.22,
+          hue: hueShift.current,
+          cx, cy,
+        })
+        if (ripples.current.length > 6) ripples.current.shift()
+
+        if (isExplosion) {
+          lastSplit.current = beatCount.current
+          // Convert every ambient bubble into a burst, fired outward from the
+          // gravity point so the grouped swarm suddenly explodes apart.
+          const gx = gravity.current.x, gy = gravity.current.y
+          const baseSpeed = (maxD / 80) * (1.0 + beatStrength * 0.6)
+          bubbles.current.forEach(b => {
+            if (b.kind !== 'ambient') return
+            const dx = b.x - gx, dy = b.y - gy
+            const dist = Math.max(1, Math.hypot(dx, dy))
+            const sp = baseSpeed * (0.7 + Math.random() * 0.5)
+            b.vx = (dx / dist) * sp
+            b.vy = (dy / dist) * sp
+            b.kind = 'burst'
+            b.life = 1
+            b.r = b.r + 1.5
+          })
+          // Plus fresh radial ring from center so it feels choreographed
+          const count = Math.round(16 + beatStrength * 10)
+          for (let i = 0; i < count; i++) {
+            const angle = (i / count) * Math.PI * 2 + Math.random() * 0.14
+            const sp = baseSpeed * (0.85 + Math.random() * 0.35)
+            bubbles.current.push({
+              x: cx, y: cy,
+              vx: Math.cos(angle) * sp, vy: Math.sin(angle) * sp,
+              r: 2.5 + Math.random() * 3 + beatStrength * 2,
+              life: 1,
+              hue: (hueShift.current + (Math.random()*80-40)) % 360,
+              kind: 'burst',
+            })
+          }
+        } else {
+          // Mild beat: nudge ambient bubbles outward slightly for texture,
+          // and spawn a small handful of soft pulses
+          bubbles.current.forEach(b => {
+            if (b.kind !== 'ambient') return
+            const dx = b.x - cx, dy = b.y - cy
+            const dist = Math.max(1, Math.hypot(dx, dy))
+            const kick = 0.6 + beatStrength * 0.4
+            b.vx += (dx / dist) * kick
+            b.vy += (dy / dist) * kick
           })
         }
         onBeat?.(beatStrength)
@@ -211,16 +276,29 @@ function MagicCanvas({ accentColor, onBeat }: {
       breathe.current    = (breathe.current + 0.011 + energy * 0.04) % (Math.PI * 2)
       wavePhase.current  = (wavePhase.current + 0.018 + high * 0.22) % (Math.PI * 2)
 
-      // ── Ambient bubbles: continuously spawn a few drifting softly ──
-      ambSpawn.current += 1 + high * 2
-      if (ambSpawn.current > 18) {
+      // Lissajous drift for the gravity point — bubbles group around it,
+      // and because it wanders, groups re-form in different parts of canvas
+      gravity.current.t += 0.004 + energy * 0.01
+      gravity.current.x = cx + Math.cos(gravity.current.t * 0.7) * W * 0.26
+      gravity.current.y = cy + Math.sin(gravity.current.t * 1.1) * H * 0.22
+
+      // ── Ambient bubbles: spawn from random edges, drift toward gravity ──
+      ambSpawn.current += 1 + high * 1.6 + bass * 1.2
+      const spawnGate = 12 - energy * 4 // higher energy → faster spawn rate
+      if (ambSpawn.current > spawnGate) {
         ambSpawn.current = 0
-        if (bubbles.current.filter(b => b.kind === 'ambient').length < 28) {
+        if (bubbles.current.filter(b => b.kind === 'ambient').length < 42) {
+          // Pick an edge so they enter from all four sides
+          const edge = Math.floor(Math.random() * 4)
+          let sx = 0, sy = 0
+          if (edge === 0)      { sx = Math.random() * W; sy = H + 8 }
+          else if (edge === 1) { sx = Math.random() * W; sy = -8 }
+          else if (edge === 2) { sx = -8; sy = Math.random() * H }
+          else                 { sx = W + 8; sy = Math.random() * H }
           bubbles.current.push({
-            x: Math.random() * W,
-            y: H + 8,
-            vx: (Math.random() - 0.5) * 0.4,
-            vy: -(0.25 + Math.random() * 0.55),
+            x: sx, y: sy,
+            vx: (Math.random() - 0.5) * 0.3,
+            vy: (Math.random() - 0.5) * 0.3,
             r: 1.5 + Math.random() * 2.5,
             life: 1,
             hue: (hueShift.current + (Math.random()*50-25)) % 360,
@@ -275,14 +353,11 @@ function MagicCanvas({ accentColor, onBeat }: {
       // ── Layer 4: Bubbles (burst + ambient) ──────────────────────
       bubbles.current = bubbles.current.filter(b => {
         if (b.life <= 0.02) return false
-        if (b.kind === 'burst') {
-          // Keep energy until past edge, then fade fast
-          const outOfBounds = b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20
-          if (outOfBounds) return false
-          return true
-        }
-        return b.y > -20
+        const outOfBounds = b.x < -40 || b.x > W + 40 || b.y < -40 || b.y > H + 40
+        if (outOfBounds) return false
+        return true
       })
+      const gx = gravity.current.x, gy = gravity.current.y
       bubbles.current.forEach(b => {
         b.x += b.vx
         b.y += b.vy
@@ -291,9 +366,25 @@ function MagicCanvas({ accentColor, onBeat }: {
           b.vx *= 0.994; b.vy *= 0.994
           b.life *= 0.993
         } else {
-          // Ambient bubbles sway sideways gently and rise
-          b.vx += Math.sin((b.y + b.x) * 0.01 + wavePhase.current) * 0.008
-          b.life *= 0.997
+          // Ambient bubble: steer toward gravity point (grouping behaviour).
+          // Pull strength ramps with energy, so in a loud chorus bubbles
+          // cluster tighter. When silent the pull is gentle and they drift.
+          const dx = gx - b.x, dy = gy - b.y
+          const dist = Math.max(1, Math.hypot(dx, dy))
+          const pull = 0.012 + energy * 0.06
+          b.vx += (dx / dist) * pull
+          b.vy += (dy / dist) * pull
+          // Orbital swirl so they don't just piling into the point — they
+          // circle it in a loose swarm.
+          b.vx += -(dy / dist) * 0.08
+          b.vy +=  (dx / dist) * 0.08
+          // Cap max speed (low at rest, higher on energy)
+          const maxV = 0.7 + energy * 2.2
+          const v = Math.hypot(b.vx, b.vy)
+          if (v > maxV) { b.vx *= maxV / v; b.vy *= maxV / v }
+          // Gentle damping
+          b.vx *= 0.96; b.vy *= 0.96
+          b.life *= 0.996
         }
         const rad = b.r * (2.4 + (b.kind === 'burst' ? 0.4 : 0))
         const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, rad)
@@ -778,8 +869,10 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
           </>
         )}
 
-        {/* Main content — fits to screen, no scroll */}
-        <div className="relative flex flex-col h-full max-w-md sm:max-w-lg lg:max-w-2xl xl:max-w-3xl mx-auto w-full px-4 sm:px-5 lg:px-0 no-scrollbar" style={{ zIndex: 10, overscrollBehavior: 'contain', overflow: 'hidden' }}>
+        {/* Main content — fits to screen, no scroll
+            Mobile: single column.  Desktop (lg+): two columns — album art on
+            the left, title/seek/controls/volume/downloads on the right. */}
+        <div className="relative flex flex-col h-full max-w-md sm:max-w-lg lg:max-w-none xl:max-w-7xl mx-auto w-full px-4 sm:px-5 lg:px-10 xl:px-16 no-scrollbar" style={{ zIndex: 10, overscrollBehavior: 'contain', overflow: 'hidden' }}>
 
           {/* Top bar */}
           <div className="flex items-center justify-between pt-4 pb-3 flex-shrink-0 lg:px-6">
@@ -826,14 +919,18 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
             </div>
           </div>
 
+          {/* Two-column shell on lg+ ; stacks on mobile */}
+          <div className="flex-1 min-h-0 flex flex-col lg:flex-row lg:items-stretch lg:justify-center lg:gap-12 xl:gap-20">
+
           {/* Art / Video — flexible, never pushes content off-screen */}
-          <div className="flex items-center justify-center flex-1 min-h-0 py-1">
-            <div className="relative overflow-hidden shadow-2xl"
+          <div className="flex items-center justify-center flex-1 min-h-0 py-1 lg:flex-1 lg:py-0 lg:min-h-0">
+            <div
+              className={`relative overflow-hidden shadow-2xl ${showVideo
+                ? 'w-[min(92vw,620px)] max-h-[min(52vw,36dvh)] rounded-[22px] lg:w-[min(56dvw,780px)] lg:max-h-[min(34dvw,62dvh)]'
+                : 'w-[min(60vw,360px)] max-h-[min(60vw,38dvh)] rounded-[26px] lg:w-[min(40dvw,520px)] lg:max-h-[min(40dvw,68dvh)]'
+              }`}
               style={{
-                width: showVideo ? 'min(92vw, 620px)' : 'min(60vw, 360px, 38dvh)',
                 aspectRatio: showVideo ? '16/9' : '1/1',
-                maxHeight: showVideo ? 'min(52vw, 36dvh)' : 'min(60vw, 38dvh)',
-                borderRadius: showVideo ? '22px' : '26px',
                 boxShadow: `0 30px 80px rgba(${accentColor},0.4), 0 8px 30px rgba(0,0,0,0.8)`,
                 transition: 'all 0.45s cubic-bezier(0.16,1,0.3,1)',
               }}>
@@ -899,6 +996,9 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
             </div>
           </div>
 
+          {/* RIGHT COLUMN (lg+) / stack (mobile) */}
+          <div className="flex flex-col flex-shrink-0 lg:flex-1 lg:max-w-xl lg:justify-center lg:py-6">
+
           {/* EQ bars — hidden on short viewports to keep player on one screen */}
           {!showVideo && !magicOn && (
             <div className="flex-shrink-0 hidden eq-compact:block">
@@ -907,7 +1007,7 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
           )}
 
           {/* Song info */}
-          <div className="text-center mb-2 flex-shrink-0 fade-in" key={currentSong.id}>
+          <div className="text-center mb-2 flex-shrink-0 fade-in lg:text-left lg:mb-4" key={currentSong.id}>
             <h2 className="text-base font-bold leading-snug line-clamp-2 mb-0.5">{currentSong.title}</h2>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{currentSong.movie_name || 'Unknown'}</p>
           </div>
@@ -970,6 +1070,9 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
           <div className="lg:px-6 flex-shrink-0">
             <DownloadSection accentColor={accentColor} />
           </div>
+
+          </div>{/* /right column */}
+          </div>{/* /two-column shell */}
         </div>
       </div>
     </>
@@ -988,25 +1091,43 @@ export function Player() {
   useEffect(() => {
     const audio = getAudio()
     if (!audio) return
+    // Watchdog: if a song never starts progressing (stalled CDN fetch
+    // while the tab is backgrounded), auto-skip so the queue keeps moving.
+    let stallTimer: ReturnType<typeof setTimeout> | null = null
+    const armStallTimer = () => {
+      if (stallTimer) clearTimeout(stallTimer)
+      stallTimer = setTimeout(() => {
+        if (audio.readyState < 2 && !audio.paused) usePlayerStore.getState().next()
+      }, 20000)
+    }
+    const clearStall = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null } }
+
     const onTime    = () => setCurrentTime(audio.currentTime)
     const onDur     = () => setDuration(audio.duration)
-    const onEnded   = () => usePlayerStore.getState().next()
-    const onPlaying = () => { setIsPlaying(true);  usePlayerStore.getState().setBuffering(false) }
-    const onWaiting = () => usePlayerStore.getState().setBuffering(true)
-    const onCanPlay = () => usePlayerStore.getState().setBuffering(false)
+    const onEnded   = () => { clearStall(); usePlayerStore.getState().next() }
+    const onPlaying = () => { clearStall(); setIsPlaying(true); usePlayerStore.getState().setBuffering(false) }
+    const onWaiting = () => { armStallTimer(); usePlayerStore.getState().setBuffering(true) }
+    const onCanPlay = () => { clearStall(); usePlayerStore.getState().setBuffering(false) }
+    const onLoadStart = () => armStallTimer()
+    const onError     = () => usePlayerStore.getState().next()
     audio.addEventListener('timeupdate',     onTime)
     audio.addEventListener('durationchange', onDur)
     audio.addEventListener('ended',          onEnded)
     audio.addEventListener('playing',        onPlaying)
     audio.addEventListener('waiting',        onWaiting)
     audio.addEventListener('canplay',        onCanPlay)
+    audio.addEventListener('loadstart',      onLoadStart)
+    audio.addEventListener('error',          onError)
     return () => {
+      clearStall()
       audio.removeEventListener('timeupdate',     onTime)
       audio.removeEventListener('durationchange', onDur)
       audio.removeEventListener('ended',          onEnded)
       audio.removeEventListener('playing',        onPlaying)
       audio.removeEventListener('waiting',        onWaiting)
       audio.removeEventListener('canplay',        onCanPlay)
+      audio.removeEventListener('loadstart',      onLoadStart)
+      audio.removeEventListener('error',          onError)
     }
   }, [])
 
@@ -1022,10 +1143,10 @@ export function Player() {
     <>
       {expanded && <ExpandedPlayer accentColor={accentColor} />}
 
-      {/* Mini player bar */}
+      {/* Mini player bar — sits above the mobile tab bar so tabs remain tappable */}
       <div className="fixed inset-x-0 z-40 slide-up"
         style={{
-          bottom: 0,
+          bottom: 'var(--tab-bar-offset, 0px)',
           background: 'var(--player-bg)',
           backdropFilter: 'blur(40px) saturate(1.6)',
           WebkitBackdropFilter: 'blur(40px) saturate(1.6)',

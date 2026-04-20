@@ -41,10 +41,17 @@ function moodFromFilename(name: string): Mood {
   return 'stories'
 }
 
-// Full-res photos live in the public `dev-photos` Supabase bucket. ~186MB
-// total stays off the frontend bundle; the CDN serves originals at 1:1.
-// See scripts/upload_dev_photos.py for the upload flow.
+// Display uses bundled compressed copies (/public/me/, ~11MB) — loads fast
+// from the frontend pod. Downloads grab the full-resolution original from
+// the public `dev-photos` Supabase bucket so visitors can save the real
+// thing. See scripts/upload_dev_photos.py for the upload flow.
 const PHOTO_CDN = 'https://koagwifcrrkojeowevqn.supabase.co/storage/v1/object/public/dev-photos'
+
+// Three filenames contain '~' which Supabase storage rejects. When we built
+// the CDN URL we swap them for '_' (matches scripts/upload_dev_photos.py).
+function cdnKey(file: string): string {
+  return file.replace(/[^A-Za-z0-9._-]/g, '_')
+}
 
 const PHOTO_FILES = [
   '1734150453655.jpeg', '20251225_204404.jpg',
@@ -55,22 +62,26 @@ const PHOTO_FILES = [
   'IMG_20250703_142128.jpg', 'IMG_20250704_180334.jpg', 'IMG_20250706_170941.jpg', 'IMG_20250713_174417.jpg',
   'IMG_20250810_175040.jpg', 'IMG_20250811_171252.jpg', 'IMG_20250814_135100.jpg', 'IMG_20250814_143957.jpg',
   'IMG_20250927_061610.jpg', 'IMG_20251016_111256.jpg', 'IMG_20251016_114757.jpg', 'IMG_20251017_174155.jpg',
-  'IMG_20251027_114914_2.jpg', 'IMG_20251105_175206.jpg', 'IMG_20251112_170717.jpg', 'IMG_20251204_152630.jpg',
+  'IMG_20251027_114914~2.jpg', 'IMG_20251105_175206.jpg', 'IMG_20251112_170717.jpg', 'IMG_20251204_152630.jpg',
   'IMG_20251222_134912.jpg', 'IMG_20251222_134937.jpg', 'IMG_20251222_135309.jpg', 'IMG_20251231_123325.jpg',
-  'IMG_20260104_155646_3.jpg', 'IMG_20260105_172508.jpg', 'IMG_20260118_130053_2.jpg', 'IMG_20260122_182600.jpg',
+  'IMG_20260104_155646~3.jpg', 'IMG_20260105_172508.jpg', 'IMG_20260118_130053~2.jpg', 'IMG_20260122_182600.jpg',
   'IMG_20260129_220319.jpg', 'IMG_20260416_162050_726.jpg', 'photo_2026-04-16_16-24-53.jpg',
 ]
 
-interface Photo { src: string; mood: Mood; date: string }
+interface Photo { src: string; full: string; mood: Mood; date: string }
 
 const PHOTOS: Photo[] = PHOTO_FILES.map(f => {
-  const base = `${PHOTO_CDN}/${f}`
   const match = f.match(/(\d{4})(\d{2})(\d{2})/)
   const date = match ? `${match[3]}/${match[2]}/${match[1].slice(2)}` : ''
-  return { src: base, mood: moodFromFilename(f), date }
+  return {
+    src:  `/me/${f}`,
+    full: `${PHOTO_CDN}/${cdnKey(f)}`,
+    mood: moodFromFilename(f),
+    date,
+  }
 })
 
-const PROFILE_PIC = `${PHOTO_CDN}/profile_pic.jpeg`
+const PROFILE_PIC = '/me/profile_pic.jpeg'
 
 const ESSENCE_PICKS = new Set([
   'IMG_20250627_131958.jpg',
@@ -214,15 +225,28 @@ function Lightbox({ photos, index, onClose, onNav }: {
         background: `radial-gradient(ellipse 60% 60% at 50% 50%, rgba(${mood.accent},0.22) 0%, rgba(${mood.accent},0.05) 55%, transparent 80%)`,
       }} />
       <div className="absolute top-4 right-4 z-10 flex gap-2">
-        <a
-          href={p.src}
-          download={p.src.split('/').pop()}
-          onClick={e => e.stopPropagation()}
+        <button
+          onClick={async e => {
+            e.stopPropagation()
+            try {
+              const res  = await fetch(p.full)
+              const blob = await res.blob()
+              const url  = URL.createObjectURL(blob)
+              const a    = document.createElement('a')
+              a.href     = url
+              a.download = p.full.split('/').pop() || 'photo.jpg'
+              document.body.appendChild(a); a.click(); document.body.removeChild(a)
+              URL.revokeObjectURL(url)
+            } catch {
+              // cross-origin fetch failed — fall back to open-in-tab
+              window.open(p.full, '_blank', 'noopener')
+            }
+          }}
           className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all hover:scale-110"
           style={{ background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.4)', color: '#c4b5fd' }}
-          title="Download photo">
+          title="Download full-resolution photo">
           <Download size={16} />
-        </a>
+        </button>
         <button onClick={onClose}
           className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all hover:scale-110"
           style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: 'white' }}>
@@ -299,32 +323,6 @@ export default function DeveloperPage() {
     else ambientRef.current.stop()
   }, [musicOn])
 
-  // Pre-warm the Supabase CDN edge for every photo on page entry so the first
-  // 6-8 images the user scrolls past feel instant. We use <link rel=preload>
-  // for the top of the grid (browser prioritises these), and a low-priority
-  // background fetch with Range: 0-0 for the rest (forces edge cache without
-  // holding the full byte stream).
-  useEffect(() => {
-    if (typeof document === 'undefined') return
-    const head = document.head
-    const tags: HTMLLinkElement[] = []
-    const topN = PHOTOS.slice(0, 6).map(p => p.src).concat([PROFILE_PIC])
-    topN.forEach(href => {
-      const l = document.createElement('link')
-      l.rel = 'preload'; l.as = 'image'; l.href = href
-      head.appendChild(l); tags.push(l)
-    })
-    const rest = PHOTOS.slice(6).map(p => p.src)
-    let cancelled = false
-    ;(async () => {
-      for (const url of rest) {
-        if (cancelled) break
-        try { await fetch(url, { headers: { Range: 'bytes=0-0' }, cache: 'force-cache' }) }
-        catch {}
-      }
-    })()
-    return () => { cancelled = true; tags.forEach(t => t.remove()) }
-  }, [])
 
   const filtered = useMemo(() =>
     activeMood === 'all' ? PHOTOS : PHOTOS.filter(p => p.mood === activeMood),

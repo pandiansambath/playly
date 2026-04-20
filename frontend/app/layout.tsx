@@ -48,7 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div className="relative z-10 flex flex-col min-h-screen">
                 <Navbar />
                 {/* pb-24 = player bar; pb-36 on mobile = player + bottom tabs */}
-                <main className="flex-1 pb-24 md:pb-24" style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom))' }}>
+                <main className="flex-1" style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom) + var(--tab-bar-offset, 0px))' }}>
                   {children}
                 </main>
                 <Player />

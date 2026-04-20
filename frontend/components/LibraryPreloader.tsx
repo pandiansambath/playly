@@ -12,13 +12,13 @@ export function LibraryPreloader() {
 
   useEffect(() => {
     if (!user) return
-    const t = setTimeout(() => {
-      api.getLibrary().then(d => {
-        const songs = d.songs.map((e: any) => e.songs)
-        preloadSongs(songs)
-      }).catch(() => {})  // silently ignore — backend may not be ready yet
-    }, 5000)  // 5s — give user time to click a song first before flooding network
-    return () => clearTimeout(t)
+    // Warm CDN edges and kick off blob downloads immediately — the 5s delay
+    // caused a 3-4s cold start on site entry because the current song's
+    // CDN edge was never pre-warmed before the audio element fetched it.
+    api.getLibrary().then(d => {
+      const songs = d.songs.map((e: any) => e.songs)
+      preloadSongs(songs)
+    }).catch(() => {})
   }, [user?.id])
 
   return null
