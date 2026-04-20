@@ -41,6 +41,11 @@ function moodFromFilename(name: string): Mood {
   return 'stories'
 }
 
+// Full-res photos live in the public `dev-photos` Supabase bucket. ~186MB
+// total stays off the frontend bundle; the CDN serves originals at 1:1.
+// See scripts/upload_dev_photos.py for the upload flow.
+const PHOTO_CDN = 'https://koagwifcrrkojeowevqn.supabase.co/storage/v1/object/public/dev-photos'
+
 const PHOTO_FILES = [
   '1734150453655.jpeg', '20251225_204404.jpg',
   'IMG20260211112715.jpg', 'IMG20260404192937.jpg', 'IMG20260404194231.jpg', 'IMG20260404194921.jpg',
@@ -50,27 +55,25 @@ const PHOTO_FILES = [
   'IMG_20250703_142128.jpg', 'IMG_20250704_180334.jpg', 'IMG_20250706_170941.jpg', 'IMG_20250713_174417.jpg',
   'IMG_20250810_175040.jpg', 'IMG_20250811_171252.jpg', 'IMG_20250814_135100.jpg', 'IMG_20250814_143957.jpg',
   'IMG_20250927_061610.jpg', 'IMG_20251016_111256.jpg', 'IMG_20251016_114757.jpg', 'IMG_20251017_174155.jpg',
-  'IMG_20251027_114914~2.jpg', 'IMG_20251105_175206.jpg', 'IMG_20251112_170717.jpg', 'IMG_20251204_152630.jpg',
+  'IMG_20251027_114914_2.jpg', 'IMG_20251105_175206.jpg', 'IMG_20251112_170717.jpg', 'IMG_20251204_152630.jpg',
   'IMG_20251222_134912.jpg', 'IMG_20251222_134937.jpg', 'IMG_20251222_135309.jpg', 'IMG_20251231_123325.jpg',
-  'IMG_20260104_155646~3.jpg', 'IMG_20260105_172508.jpg', 'IMG_20260118_130053~2.jpg', 'IMG_20260122_182600.jpg',
+  'IMG_20260104_155646_3.jpg', 'IMG_20260105_172508.jpg', 'IMG_20260118_130053_2.jpg', 'IMG_20260122_182600.jpg',
   'IMG_20260129_220319.jpg', 'IMG_20260416_162050_726.jpg', 'photo_2026-04-16_16-24-53.jpg',
 ]
 
 interface Photo { src: string; mood: Mood; date: string }
 
 const PHOTOS: Photo[] = PHOTO_FILES.map(f => {
-  const base = `/me/${f}`
+  const base = `${PHOTO_CDN}/${f}`
   const match = f.match(/(\d{4})(\d{2})(\d{2})/)
   const date = match ? `${match[3]}/${match[2]}/${match[1].slice(2)}` : ''
   return { src: base, mood: moodFromFilename(f), date }
 })
 
-// Hero portrait is profile_pic.jpeg — always tagged essence
-const PROFILE_PIC = '/me/profile_pic.jpeg'
+const PROFILE_PIC = `${PHOTO_CDN}/profile_pic.jpeg`
 
-// Add a couple of the most visually striking ones as "essence"
 const ESSENCE_PICKS = new Set([
-  'IMG_20250627_131958.jpg',  // library laptop — iconic
+  'IMG_20250627_131958.jpg',
   'IMG20260404194231.jpg',
   'IMG_20260122_182600.jpg',
   'IMG_20260416_162050_726.jpg',
@@ -295,6 +298,33 @@ export default function DeveloperPage() {
     if (musicOn) { ambientRef.current.start(); setMusicStarted(true) }
     else ambientRef.current.stop()
   }, [musicOn])
+
+  // Pre-warm the Supabase CDN edge for every photo on page entry so the first
+  // 6-8 images the user scrolls past feel instant. We use <link rel=preload>
+  // for the top of the grid (browser prioritises these), and a low-priority
+  // background fetch with Range: 0-0 for the rest (forces edge cache without
+  // holding the full byte stream).
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const head = document.head
+    const tags: HTMLLinkElement[] = []
+    const topN = PHOTOS.slice(0, 6).map(p => p.src).concat([PROFILE_PIC])
+    topN.forEach(href => {
+      const l = document.createElement('link')
+      l.rel = 'preload'; l.as = 'image'; l.href = href
+      head.appendChild(l); tags.push(l)
+    })
+    const rest = PHOTOS.slice(6).map(p => p.src)
+    let cancelled = false
+    ;(async () => {
+      for (const url of rest) {
+        if (cancelled) break
+        try { await fetch(url, { headers: { Range: 'bytes=0-0' }, cache: 'force-cache' }) }
+        catch {}
+      }
+    })()
+    return () => { cancelled = true; tags.forEach(t => t.remove()) }
+  }, [])
 
   const filtered = useMemo(() =>
     activeMood === 'all' ? PHOTOS : PHOTOS.filter(p => p.mood === activeMood),
