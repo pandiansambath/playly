@@ -106,7 +106,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   buffering:   false,
   currentTime: 0,
   duration:    0,
-  volume:      0.8,
+  volume:      1.0,
   shuffle:     false,
   repeat:      'none',
   accentColor: '139,92,246',

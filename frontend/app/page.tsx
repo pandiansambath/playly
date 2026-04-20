@@ -125,9 +125,14 @@ function LandingPage() {
       {/* ─── LEFT PANEL ─── */}
       <div className="landing-left">
 
-        {/* Logo */}
-        <div className="mb-5 fade-in">
+        {/* Logo + mobile music disc */}
+        <div className="mb-5 fade-in flex items-center justify-between gap-3">
           <PlayLyLogo size="xl" />
+          <div className="landing-mobile-disc">
+            <div className="landing-mobile-disc-inner">
+              <Music size={28} style={{ color: 'rgba(196,181,253,0.9)' }} />
+            </div>
+          </div>
         </div>
 
         {/* Hero */}
@@ -383,7 +388,7 @@ function LandingPage() {
           flexShrink: 0,
         }}>PS</div>
         <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap' }}>
-          built by Pandian ✦
+          built by me ✦
         </span>
       </Link>
     </div>
@@ -613,30 +618,63 @@ function PlayLyIntroScreen() {
         }} />
       ))}
 
+      {/* Floating music notes rising */}
+      {[...Array(8)].map((_, i) => (
+        <div key={`note-${i}`} className="music-note pointer-events-none absolute select-none"
+          style={{
+            bottom: `${8 + (i * 11) % 35}%`,
+            left: `${10 + (i * 13) % 80}%`,
+            fontSize: 18 + (i % 3) * 4,
+            color: i % 2 === 0 ? 'rgba(196,181,253,0.75)' : 'rgba(236,72,153,0.7)',
+            animationDuration: `${2.8 + (i % 4) * 0.4}s`,
+            animationDelay: `${i * 0.25}s`,
+          }}>
+          {i % 3 === 0 ? '♪' : i % 3 === 1 ? '♫' : '♬'}
+        </div>
+      ))}
+
       <div className="relative z-10 flex flex-col items-center gap-7">
-        {/* Breathing disc with pulsing ring */}
+        {/* Breathing vinyl disc with counter-rotating ring */}
         <div className="relative flex items-center justify-center"
           style={{ width: 148, height: 148 }}>
+          {/* Outer blurred conic ring */}
           <div style={{
             position: 'absolute', inset: 0, borderRadius: '50%',
             background: 'conic-gradient(from 0deg, #8B5CF6, #EC4899, #F97316, #06B6D4, #8B5CF6)',
             filter: 'blur(14px)', opacity: 0.55,
             animation: 'spin-disc 5s linear infinite',
           }} />
+          {/* Counter-rotating sharp ring */}
+          <div style={{
+            position: 'absolute', inset: 6, borderRadius: '50%',
+            border: '1.5px dashed rgba(196,181,253,0.25)',
+            animation: 'spin-disc 11s linear infinite reverse',
+          }} />
+          {/* Vinyl grooves */}
           <div style={{
             position: 'relative', width: 110, height: 110, borderRadius: '50%',
-            background: 'linear-gradient(135deg, #1a0a3a, #0f0715)',
+            background: 'radial-gradient(circle at 40% 40%, rgba(139,92,246,0.3) 0%, #1a0a3a 35%, #0f0715 70%)',
             border: '1px solid rgba(139,92,246,0.3)',
             boxShadow: '0 20px 60px rgba(139,92,246,0.5), inset 0 0 40px rgba(0,0,0,0.6)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden',
+            animation: 'spin-disc 3.2s linear infinite',
           }}>
-            <Music size={40} style={{ color: 'rgba(196,181,253,0.85)' }} />
+            {/* Concentric groove lines */}
+            {[0.78, 0.62, 0.46, 0.3].map((s, i) => (
+              <div key={i} style={{
+                position: 'absolute', inset: `${(1 - s) * 50}%`, borderRadius: '50%',
+                border: '1px solid rgba(255,255,255,0.04)',
+              }} />
+            ))}
+            <Music size={38} style={{ color: 'rgba(196,181,253,0.88)', position: 'relative', zIndex: 1 }} />
             <div style={{
               position: 'absolute', top: '50%', left: '50%',
               width: 10, height: 10, borderRadius: '50%',
               background: '#fff',
               transform: 'translate(-50%,-50%)',
               boxShadow: '0 0 10px rgba(255,255,255,0.9)',
+              zIndex: 2,
             }} />
           </div>
         </div>
@@ -675,12 +713,26 @@ function PlayLyIntroScreen() {
 }
 
 // ─────────────────────────────────────────────────────────
-// ROOT PAGE
+// ROOT PAGE — shows the PlayLy intro for 2.2s after sign-in
+// so the app entry always feels like a curtain rising
 // ─────────────────────────────────────────────────────────
 export default function HomePage() {
   const { user, loading } = useAuth()
+  const [postLoginLinger, setPostLoginLinger] = useState(false)
+  const prevUser = useRef<string | null>(null)
 
-  if (loading) {
+  useEffect(() => {
+    const id = user?.id ?? null
+    if (prevUser.current === null && id) {
+      // Transition from signed-out/loading → signed-in: show intro 2.2s
+      setPostLoginLinger(true)
+      const t = setTimeout(() => setPostLoginLinger(false), 2200)
+      return () => clearTimeout(t)
+    }
+    prevUser.current = id
+  }, [user?.id])
+
+  if (loading || postLoginLinger) {
     return <PlayLyIntroScreen />
   }
 

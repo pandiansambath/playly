@@ -144,3 +144,43 @@ async def download_audio_via_loader(youtube_id: str, on_progress=None) -> tuple[
         "_source": "loader.to",
     }
     return mp3, info
+
+
+async def resolve_video_download(youtube_id: str, quality: str = "720") -> tuple[str, str]:
+    """Kick off a loader.to mp4 conversion and return (download_url, title).
+
+    The caller is expected to stream bytes from the URL directly to the client
+    so the server never holds the file. Supported qualities: 360, 480, 720, 1080.
+    """
+    yt_url = f"https://www.youtube.com/watch?v={youtube_id}"
+    async with httpx.AsyncClient(headers=_HEADERS, timeout=30, verify=False) as client:
+        r = await client.get(_START_URL, params={"format": quality, "url": yt_url})
+        r.raise_for_status()
+        data = r.json()
+        if not data.get("success") or not data.get("id"):
+            raise RuntimeError(f"loader.to rejected video request: {data}")
+        job_id = data["id"]
+
+        download_url = None
+        last_err: Exception | None = None
+        for host in _PROGRESS_HOSTS:
+            for i in range(120):
+                await asyncio.sleep(1.0 if i < 12 else 2.0)
+                try:
+                    pr = await client.get(f"{host}/ajax/progress.php", params={"id": job_id})
+                    if pr.status_code != 200:
+                        continue
+                    prog = pr.json()
+                    if prog.get("success") == 1 and prog.get("download_url"):
+                        download_url = prog["download_url"]
+                        break
+                except Exception as e:
+                    last_err = e
+            if download_url:
+                break
+        if not download_url:
+            raise RuntimeError(f"loader.to video conversion timed out ({last_err})")
+
+        meta = await _oembed(client, youtube_id)
+
+    return download_url, (meta.get("title") or youtube_id)

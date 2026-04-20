@@ -19,12 +19,12 @@ import {
 type Mood = 'dawn' | 'focus' | 'wander' | 'joy' | 'stories' | 'essence'
 
 const MOODS: { id: Mood; label: string; emoji: string; Icon: any; hint: string; accent: string }[] = [
-  { id: 'essence', label: 'Essence', emoji: '✦',  Icon: Sparkles, hint: 'Moments that define',        accent: '139,92,246' },
-  { id: 'dawn',    label: 'Dawn',    emoji: '🌅', Icon: Sun,      hint: 'Early light & fresh starts',  accent: '251,146,60' },
-  { id: 'focus',   label: 'Focus',   emoji: '💻', Icon: Coffee,   hint: 'Library, laptop, deep work',  accent: '14,165,233' },
-  { id: 'wander',  label: 'Wander',  emoji: '🏔', Icon: Mountain, hint: 'Outdoors & golden hour',      accent: '34,197,94'  },
-  { id: 'joy',     label: 'Joy',     emoji: '🍜', Icon: Smile,    hint: 'Food, friends, laughter',     accent: '236,72,153' },
-  { id: 'stories', label: 'Stories', emoji: '🌙', Icon: Moon,     hint: 'Late nights, celebrations',   accent: '168,85,247' },
+  { id: 'essence', label: 'Essence', emoji: '✦', Icon: Sparkles, hint: 'Moments that define', accent: '139,92,246' },
+  { id: 'dawn', label: 'Dawn', emoji: '🌅', Icon: Sun, hint: 'Early light & fresh starts', accent: '251,146,60' },
+  { id: 'focus', label: 'Focus', emoji: '💻', Icon: Coffee, hint: 'Library, laptop, deep work', accent: '14,165,233' },
+  { id: 'wander', label: 'Wander', emoji: '🏔', Icon: Mountain, hint: 'Outdoors & golden hour', accent: '34,197,94' },
+  { id: 'joy', label: 'Joy', emoji: '🍜', Icon: Smile, hint: 'Food, friends, laughter', accent: '236,72,153' },
+  { id: 'stories', label: 'Stories', emoji: '🌙', Icon: Moon, hint: 'Late nights, celebrations', accent: '168,85,247' },
 ]
 
 function moodFromFilename(name: string): Mood {
@@ -34,7 +34,7 @@ function moodFromFilename(name: string): Mood {
   if (!m) m = name.match(/^IMG(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/)
   const hour = m ? parseInt(m[4], 10) : -1
   if (hour === -1) return 'essence'
-  if (hour >= 5  && hour <= 9)  return 'dawn'
+  if (hour >= 5 && hour <= 9) return 'dawn'
   if (hour >= 10 && hour <= 15) return 'focus'
   if (hour >= 16 && hour <= 18) return 'wander'
   if (hour >= 19 && hour <= 21) return 'joy'
@@ -84,20 +84,22 @@ PHOTOS.forEach(p => {
 // TIMELINE — real journey
 // ══════════════════════════════════════════════════════════════
 const TIMELINE = [
-  { icon: GraduationCap, color: '#FBBF24', title: 'M.E. Computer Science · Anna University', sub: 'Gold Medal · 17th Convocation · 2024' },
-  { icon: Briefcase,     color: '#8B5CF6', title: 'Systems Engineer · Tata Consultancy Services', sub: 'Cloud · DevOps · Full-stack · 2024 →' },
-  { icon: Award,         color: '#EC4899', title: 'Innovator Award',                    sub: 'Best Performance Recognition · TCS · 2025' },
-  { icon: Code2,         color: '#06B6D4', title: 'Builder, by heart',                  sub: 'PlayLy · Apache Camel · Supabase · AKS · 2026' },
+  { icon: GraduationCap, color: '#FBBF24', title: 'B.Tech · Anna University', sub: '17th Rank · Gold Medal · 2019 – 2023' },
+  { icon: Briefcase, color: '#8B5CF6', title: 'Systems Engineer · Tata Consultancy Services', sub: 'Cloud · DevOps · Full-stack · 2024 →' },
+  { icon: Award, color: '#06B6D4', title: 'TCS Digital', sub: 'Completed Digital cadre · 2025' },
+  { icon: Award, color: '#EC4899', title: 'TCS Innovator', sub: 'Completed Innovator cadre · 2026' },
+  { icon: Sparkles, color: '#F59E0B', title: 'Star of the Month', sub: 'Recognition for impact & ownership · TCS' },
+  { icon: Code2, color: '#34D399', title: 'Builder, by heart', sub: 'PlayLy · Apache Camel · Supabase · AKS' },
 ]
 
 const TECH = [
-  { name: 'Python',     hot: true  }, { name: 'FastAPI',    hot: true  },
-  { name: 'Next.js',    hot: true  }, { name: 'TypeScript', hot: false },
-  { name: 'AWS',        hot: true  }, { name: 'Azure AKS',  hot: false },
-  { name: 'Kubernetes', hot: false }, { name: 'Docker',     hot: false },
-  { name: 'Terraform',  hot: false }, { name: 'ArgoCD',     hot: false },
-  { name: 'Supabase',   hot: false }, { name: 'PostgreSQL', hot: false },
-  { name: 'Apache Camel', hot: false }, { name: 'yt-dlp',   hot: false },
+  { name: 'Python', hot: true }, { name: 'FastAPI', hot: true },
+  { name: 'Next.js', hot: true }, { name: 'TypeScript', hot: false },
+  { name: 'AWS', hot: true }, { name: 'Azure AKS', hot: false },
+  { name: 'Kubernetes', hot: false }, { name: 'Docker', hot: false },
+  { name: 'Terraform', hot: false }, { name: 'ArgoCD', hot: false },
+  { name: 'Supabase', hot: false }, { name: 'PostgreSQL', hot: false },
+  { name: 'Apache Camel', hot: false }, { name: 'GitHub Actions', hot: false },
 ]
 
 // ══════════════════════════════════════════════════════════════
@@ -158,7 +160,7 @@ function createAmbient() {
       filterLfo.start()
       lfos.push(filterLfo)
       running = true
-    } catch {}
+    } catch { }
   }
 
   function stop() {
@@ -172,7 +174,7 @@ function createAmbient() {
         oscs.forEach(o => o.stop())
         lfos.forEach(l => l.stop())
         ctx?.close()
-      } catch {}
+      } catch { }
       oscs = []; lfos = []; ctx = null; master = null; filter = null
       running = false
     }, 700)
@@ -190,9 +192,9 @@ function Lightbox({ photos, index, onClose, onNav }: {
   const p = photos[index]
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.key === 'Escape')     onClose()
+      if (e.key === 'Escape') onClose()
       if (e.key === 'ArrowRight') onNav(1)
-      if (e.key === 'ArrowLeft')  onNav(-1)
+      if (e.key === 'ArrowLeft') onNav(-1)
     }
     window.addEventListener('keydown', h)
     document.body.style.overflow = 'hidden'
@@ -208,11 +210,22 @@ function Lightbox({ photos, index, onClose, onNav }: {
       <div className="absolute inset-0 pointer-events-none" style={{
         background: `radial-gradient(ellipse 60% 60% at 50% 50%, rgba(${mood.accent},0.22) 0%, rgba(${mood.accent},0.05) 55%, transparent 80%)`,
       }} />
-      <button onClick={onClose}
-        className="absolute top-4 right-4 z-10 w-10 h-10 rounded-2xl flex items-center justify-center transition-all hover:scale-110"
-        style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: 'white' }}>
-        <X size={18} />
-      </button>
+      <div className="absolute top-4 right-4 z-10 flex gap-2">
+        <a
+          href={p.src}
+          download={p.src.split('/').pop()}
+          onClick={e => e.stopPropagation()}
+          className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all hover:scale-110"
+          style={{ background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.4)', color: '#c4b5fd' }}
+          title="Download photo">
+          <Download size={16} />
+        </a>
+        <button onClick={onClose}
+          className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all hover:scale-110"
+          style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: 'white' }}>
+          <X size={18} />
+        </button>
+      </div>
       <button onClick={e => { e.stopPropagation(); onNav(-1) }}
         className="absolute left-3 sm:left-5 z-10 w-11 h-11 rounded-2xl flex items-center justify-center transition-all hover:scale-110"
         style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: 'white' }}>
@@ -251,9 +264,9 @@ function Lightbox({ photos, index, onClose, onNav }: {
 // PAGE
 // ══════════════════════════════════════════════════════════════
 export default function DeveloperPage() {
-  const [lightbox, setLightbox]   = useState<number | null>(null)
+  const [lightbox, setLightbox] = useState<number | null>(null)
   const [activeMood, setActiveMood] = useState<Mood | 'all'>('all')
-  const [musicOn, setMusicOn]     = useState(true)
+  const [musicOn, setMusicOn] = useState(true)
   const [musicStarted, setMusicStarted] = useState(false)
   const ambientRef = useRef<ReturnType<typeof createAmbient> | null>(null)
 
@@ -300,9 +313,9 @@ export default function DeveloperPage() {
     <div className="dev-root">
       {/* ── Ambient background ─────────────────────────── */}
       <div className="dev-aurora">
-        <div className="aurora-blob" style={{ width: 560, height: 560, top: '-18%', left: '-10%',  background: 'rgba(139,92,246,0.18)', animationDelay: '0s' }} />
-        <div className="aurora-blob" style={{ width: 420, height: 420, top: '35%',  right: '-8%',  background: 'rgba(236,72,153,0.14)', animationDelay: '2s' }} />
-        <div className="aurora-blob" style={{ width: 380, height: 380, bottom: '-10%', left: '30%',background: 'rgba(6,182,212,0.10)',  animationDelay: '4s' }} />
+        <div className="aurora-blob" style={{ width: 560, height: 560, top: '-18%', left: '-10%', background: 'rgba(139,92,246,0.18)', animationDelay: '0s' }} />
+        <div className="aurora-blob" style={{ width: 420, height: 420, top: '35%', right: '-8%', background: 'rgba(236,72,153,0.14)', animationDelay: '2s' }} />
+        <div className="aurora-blob" style={{ width: 380, height: 380, bottom: '-10%', left: '30%', background: 'rgba(6,182,212,0.10)', animationDelay: '4s' }} />
       </div>
       {Array.from({ length: 38 }, (_, i) => (
         <div key={i} className="landing-star pointer-events-none" style={{
@@ -316,7 +329,11 @@ export default function DeveloperPage() {
       {/* ── Top bar ─────────────────────────────────────── */}
       <div className="dev-topbar">
         <Link href="/" className="dev-back">
-          <ArrowLeft size={14} /> <span>back to PlayLy</span>
+          <span className="dev-back-icon"><ArrowLeft size={14} /></span>
+          <span className="dev-back-text">
+            <em>back to</em>
+            <b>PlayLy</b>
+          </span>
         </Link>
         <div className="dev-topbar-right">
           <button
@@ -372,9 +389,9 @@ export default function DeveloperPage() {
               </a>
             </div>
             <div className="dev-hero-metrics">
-              <div><b>45+</b><span>moments captured</span></div>
-              <div><b>M.E.</b><span>Anna University · Gold</span></div>
-              <div><b>TCS</b><span>Systems Engineer</span></div>
+              <div><b>17th</b><span>Anna Uni · Gold Medal</span></div>
+              <div><b>TCS</b><span>Digital · Innovator</span></div>
+              <div><b>2024 →</b><span>Systems Engineer</span></div>
             </div>
           </div>
         </div>
@@ -480,7 +497,7 @@ export default function DeveloperPage() {
       {/* ── Footer ──────────────────────────────────────── */}
       <footer className="dev-footer">
         <p>
-          built with too much chai · <a href="https://github.com/pandiansambath" target="_blank" rel="noopener">pandiansambath</a>
+          built with love · <a href="https://github.com/pandiansambath" target="_blank" rel="noopener">pandiansambath</a>
           {' '} · {new Date().getFullYear()}
         </p>
       </footer>
@@ -515,21 +532,46 @@ export default function DeveloperPage() {
           border-bottom: 1px solid rgba(255,255,255,0.06);
         }
         .dev-back {
-          display: flex; align-items: center; gap: 6px;
-          padding: 7px 12px; border-radius: 12px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.08);
-          color: rgba(255,255,255,0.55);
-          font-size: 12px; font-weight: 500;
+          display: inline-flex; align-items: center; gap: 10px;
+          padding: 7px 14px 7px 7px; border-radius: 99px;
+          background: linear-gradient(135deg, rgba(139,92,246,0.14), rgba(236,72,153,0.08));
+          border: 1px solid rgba(139,92,246,0.25);
+          color: rgba(255,255,255,0.9);
           text-decoration: none;
-          transition: all 0.2s;
+          transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+          box-shadow: 0 2px 10px rgba(139,92,246,0.08);
+        }
+        .dev-back-icon {
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 26px; height: 26px; border-radius: 50%;
+          background: linear-gradient(135deg, #8B5CF6, #EC4899);
+          color: #fff;
+          transition: transform 0.25s cubic-bezier(0.16,1,0.3,1);
+          box-shadow: 0 2px 10px rgba(139,92,246,0.45);
+        }
+        .dev-back-text {
+          display: inline-flex; flex-direction: column; line-height: 1;
+          text-align: left;
+        }
+        .dev-back-text em {
+          font-size: 9px; font-style: normal; font-weight: 600;
+          letter-spacing: 0.14em; text-transform: uppercase;
+          color: rgba(255,255,255,0.42);
+          margin-bottom: 3px;
+        }
+        .dev-back-text b {
+          font-size: 13px; font-weight: 800; letter-spacing: -0.01em;
+          background: linear-gradient(120deg, #fff 0%, #c4b5fd 100%);
+          -webkit-background-clip: text; background-clip: text;
+          -webkit-text-fill-color: transparent;
         }
         .dev-back:hover {
-          background: rgba(139,92,246,0.14);
-          border-color: rgba(139,92,246,0.35);
-          color: #c4b5fd;
-          transform: translateX(-2px);
+          background: linear-gradient(135deg, rgba(139,92,246,0.22), rgba(236,72,153,0.14));
+          border-color: rgba(139,92,246,0.45);
+          transform: translateX(-3px);
+          box-shadow: 0 6px 24px rgba(139,92,246,0.25);
         }
+        .dev-back:hover .dev-back-icon { transform: translateX(-2px); }
         .dev-topbar-right { display: flex; gap: 8px; align-items: center; }
         .dev-music-btn {
           display: flex; align-items: center; gap: 6px;
@@ -877,7 +919,9 @@ export default function DeveloperPage() {
           .dev-panels { grid-template-columns: 1fr; }
           .dev-topbar { padding: 10px 14px; }
           .dev-resume-btn span, .dev-music-btn span { display: none; }
-          .dev-back span { display: none; }
+          .dev-back { padding: 5px 12px 5px 5px; }
+          .dev-back-text em { display: none; }
+          .dev-back-text b { font-size: 12px; }
         }
       `}</style>
     </div>

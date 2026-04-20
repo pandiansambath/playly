@@ -6,16 +6,22 @@ import {
   MonitorPlay, Sparkles, Download, Loader2, Check, X,
 } from 'lucide-react'
 import { usePlayerStore, getAudio } from '@/store/playerStore'
-import { formatDuration } from '@/lib/supabase'
+import { formatDuration, supabase } from '@/lib/supabase'
 import { api } from '@/lib/api'
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 // ═══════════════════════════════════════════════════════════
 // WEB AUDIO ANALYSER — Module-level singleton
 // createMediaElementSource can only be called once per element
+// Pipeline: src → analyser → boost → destination
+// `boost` lets us push past the 1.0 browser ceiling so songs feel loud.
 // ═══════════════════════════════════════════════════════════
 let _audioCtx: AudioContext | null = null
 let _analyser: AnalyserNode | null = null
+let _boost:    GainNode | null = null
 let _analyserReady = false
+const MAX_BOOST = 1.8   // 1.0 = native, 1.8 = +5dB headroom
 
 function initAnalyser(): AnalyserNode | null {
   if (_analyserReady) return _analyser
@@ -27,9 +33,12 @@ function initAnalyser(): AnalyserNode | null {
     _analyser = _audioCtx.createAnalyser()
     _analyser.fftSize = 512          // 256 frequency bins
     _analyser.smoothingTimeConstant = 0.78
+    _boost = _audioCtx.createGain()
+    _boost.gain.value = MAX_BOOST    // constant boost — slider scales via audio.volume
     const src = _audioCtx.createMediaElementSource(audio)
     src.connect(_analyser)
-    _analyser.connect(_audioCtx.destination)
+    _analyser.connect(_boost)
+    _boost.connect(_audioCtx.destination)
     return _analyser
   } catch { return null }
 }
@@ -97,9 +106,15 @@ function EqCanvas({ isPlaying, accentColor }: { isPlaying: boolean; accentColor:
 }
 
 // ═══════════════════════════════════════════════════════════
-// MAGIC VISUALIZER CANVAS — soothing beat-reactive aura
-// Smooth breathing orbs + soft ripples that follow the beat
+// MAGIC VISUALIZER CANVAS — full-screen beat-reactive aura
+// Layers: drifting orbs, waveform at bottom, ambient bubble stream,
+//         beat-triggered ring-burst that flies all the way to edges
 // ═══════════════════════════════════════════════════════════
+type Bubble = {
+  x: number; y: number; vx: number; vy: number; r: number; life: number; hue: number;
+  kind: 'burst' | 'ambient' // burst = beat-spawned edge-flyer, ambient = slow floater
+}
+
 function MagicCanvas({ accentColor, onBeat }: {
   accentColor: string
   onBeat?: (strength: number) => void
@@ -107,13 +122,15 @@ function MagicCanvas({ accentColor, onBeat }: {
   const canvasRef  = useRef<HTMLCanvasElement>(null)
   const rafRef     = useRef<number>(0)
   const prevEnergy = useRef(0)
-  const avgEnergy  = useRef(0)     // rolling average for adaptive threshold
+  const avgEnergy  = useRef(0)
   const beatTime   = useRef(0)
   const hueShift   = useRef(270)
   const breathe    = useRef(0)
-  // Particles that drift upward on each beat
-  const particles  = useRef<{ x: number; y: number; vx: number; vy: number; r: number; life: number; hue: number }[]>([])
-  const ripples    = useRef<{ r: number; maxR: number; alpha: number; hue: number }[]>([])
+  const wavePhase  = useRef(0)
+  const ambSpawn   = useRef(0)
+
+  const bubbles = useRef<Bubble[]>([])
+  const ripples = useRef<{ r: number; maxR: number; alpha: number; hue: number; cx: number; cy: number }[]>([])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -121,7 +138,12 @@ function MagicCanvas({ accentColor, onBeat }: {
     const ctx = canvas.getContext('2d')!
     const el  = canvas
 
-    function resize() { el.width = el.offsetWidth; el.height = el.offsetHeight }
+    function resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      el.width  = el.offsetWidth  * dpr
+      el.height = el.offsetHeight * dpr
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
     resize()
     window.addEventListener('resize', resize)
 
@@ -131,123 +153,180 @@ function MagicCanvas({ accentColor, onBeat }: {
 
     function draw() {
       rafRef.current = requestAnimationFrame(draw)
-      const W = el.width
-      const H = el.height
+      const W = el.offsetWidth
+      const H = el.offsetHeight
       if (!W || !H) return
 
       if (analyser && dataArr) analyser.getByteFrequencyData(dataArr)
 
-      // Energy extraction — bass (kick/sub), mid (snare/vox), high (hats)
-      const bass   = dataArr ? (dataArr[1]+dataArr[2]+dataArr[3]+dataArr[4]+dataArr[5]) / (5*255) : 0.12
-      const mid    = dataArr ? (dataArr[8]+dataArr[12]+dataArr[16]+dataArr[20]) / (4*255) : 0.08
-      const high   = dataArr ? (dataArr[40]+dataArr[60]+dataArr[80]) / (3*255) : 0.04
+      // ── Frequency bands ─────────────────────────────────────────
+      const bass = dataArr ? (dataArr[1]+dataArr[2]+dataArr[3]+dataArr[4]+dataArr[5]) / (5*255) : 0.12
+      const mid  = dataArr ? (dataArr[8]+dataArr[12]+dataArr[16]+dataArr[20]) / (4*255) : 0.08
+      const high = dataArr ? (dataArr[40]+dataArr[60]+dataArr[80]) / (3*255) : 0.04
       const energy = bass * 0.66 + mid * 0.28 + high * 0.06
 
-      // Adaptive beat detection — use rolling average to pick threshold automatically
-      // Louder songs → higher threshold, quieter songs → still detect subtle beats
+      // ── Adaptive beat detection ─────────────────────────────────
       avgEnergy.current = avgEnergy.current * 0.985 + energy * 0.015
-      const now    = performance.now()
+      const now = performance.now()
       const threshold = Math.max(0.05, avgEnergy.current * 1.32)
-      const strength = energy / Math.max(0.001, avgEnergy.current) // how much above average
+      const strength = energy / Math.max(0.001, avgEnergy.current)
       const isBeat = energy > threshold && energy > prevEnergy.current * 1.10 && now - beatTime.current > 120
+      const cx = W / 2
+      const cy = H / 2
+      const maxD = Math.hypot(cx, cy) // distance to corner
+
       if (isBeat) {
         beatTime.current = now
         const beatStrength = Math.min(1.4, Math.max(0.5, strength - 1))
-        ripples.current.push({ r: 0, maxR: Math.min(W,H) * (0.42 + beatStrength * 0.15), alpha: 0.45 + beatStrength * 0.2, hue: hueShift.current })
-        if (ripples.current.length > 6) ripples.current.shift()
-        // Spawn particles proportional to beat strength
-        const count = Math.round(3 + beatStrength * 5)
+        // Ripple radiates to the furthest corner so it's always full-screen
+        ripples.current.push({
+          r: 0, maxR: maxD * 1.05,
+          alpha: 0.38 + beatStrength * 0.22, hue: hueShift.current,
+          cx, cy,
+        })
+        if (ripples.current.length > 5) ripples.current.shift()
+
+        // Beat burst: 14–22 bubbles fired outward in a ring, velocities
+        // sized so they actually *reach* the edge before dying.
+        const count = Math.round(14 + beatStrength * 8)
+        const baseSpeed = (maxD / 90) * (0.9 + beatStrength * 0.6) // pixels/frame ~ reach edge in 90 frames
         for (let i = 0; i < count; i++) {
-          const angle = Math.random() * Math.PI * 2
-          const sp = 0.6 + Math.random() * 1.8
-          particles.current.push({
-            x: W/2 + Math.cos(angle) * 10,
-            y: H/2 + Math.sin(angle) * 10,
+          const angle = (i / count) * Math.PI * 2 + Math.random() * 0.18
+          const sp = baseSpeed * (0.85 + Math.random() * 0.35)
+          bubbles.current.push({
+            x: cx, y: cy,
             vx: Math.cos(angle) * sp,
-            vy: Math.sin(angle) * sp - 0.3,
-            r: 2 + Math.random() * 2.8,
+            vy: Math.sin(angle) * sp,
+            r: 2.5 + Math.random() * 3 + beatStrength * 2,
             life: 1,
-            hue: (hueShift.current + (Math.random()*60-30)) % 360,
+            hue: (hueShift.current + (Math.random()*80-40)) % 360,
+            kind: 'burst',
           })
         }
-        if (particles.current.length > 80) particles.current.splice(0, particles.current.length - 80)
         onBeat?.(beatStrength)
       }
-      prevEnergy.current = energy * 0.55 + prevEnergy.current * 0.45
-      hueShift.current   = (hueShift.current + 0.22 + energy * 1.4) % 360
-      breathe.current    = (breathe.current + 0.011 + energy * 0.05) % (Math.PI * 2)
 
-      // Smooth background fade
-      ctx.fillStyle = 'rgba(4,4,14,0.18)'
+      prevEnergy.current = energy * 0.55 + prevEnergy.current * 0.45
+      hueShift.current   = (hueShift.current + 0.25 + energy * 1.4) % 360
+      breathe.current    = (breathe.current + 0.011 + energy * 0.04) % (Math.PI * 2)
+      wavePhase.current  = (wavePhase.current + 0.018 + high * 0.22) % (Math.PI * 2)
+
+      // ── Ambient bubbles: continuously spawn a few drifting softly ──
+      ambSpawn.current += 1 + high * 2
+      if (ambSpawn.current > 18) {
+        ambSpawn.current = 0
+        if (bubbles.current.filter(b => b.kind === 'ambient').length < 28) {
+          bubbles.current.push({
+            x: Math.random() * W,
+            y: H + 8,
+            vx: (Math.random() - 0.5) * 0.4,
+            vy: -(0.25 + Math.random() * 0.55),
+            r: 1.5 + Math.random() * 2.5,
+            life: 1,
+            hue: (hueShift.current + (Math.random()*50-25)) % 360,
+            kind: 'ambient',
+          })
+        }
+      }
+
+      // ── Background wash: trail + base ambience ───────────────────
+      ctx.fillStyle = 'rgba(4,4,14,0.22)'
       ctx.fillRect(0, 0, W, H)
 
-      const cx = W / 2
-      const cy = H / 2
-      const minD = Math.min(cx, cy)
-
-      // ── Layer 1: Ambient background aurora (2 slow drifting orbs) ──
-      for (let o = 0; o < 2; o++) {
-        const phase = breathe.current + o * Math.PI
-        const ox = cx + Math.cos(phase * 0.3 + o * 2.1) * minD * 0.28
-        const oy = cy + Math.sin(phase * 0.25 + o * 1.8) * minD * 0.22
-        const r  = minD * (0.55 + energy * 0.22 + Math.sin(phase) * 0.08)
-        const hue = (hueShift.current + o * 50) % 360
+      // ── Layer 1: Big drifting aurora orbs (cover whole canvas) ───
+      for (let o = 0; o < 3; o++) {
+        const phase = breathe.current + o * (Math.PI * 2 / 3)
+        const ox = cx + Math.cos(phase * 0.33 + o * 2.1) * W * 0.42
+        const oy = cy + Math.sin(phase * 0.27 + o * 1.8) * H * 0.38
+        const r  = Math.max(W, H) * (0.38 + energy * 0.18 + Math.sin(phase) * 0.06)
+        const hue = (hueShift.current + o * 60) % 360
         const g  = ctx.createRadialGradient(ox, oy, 0, ox, oy, r)
-        g.addColorStop(0,   `hsla(${hue},90%,68%,${0.10 + energy * 0.12})`)
-        g.addColorStop(0.5, `hsla(${(hue+30)%360},85%,55%,${0.05 + energy * 0.06})`)
+        g.addColorStop(0,   `hsla(${hue},90%,66%,${0.09 + energy * 0.10})`)
+        g.addColorStop(0.5, `hsla(${(hue+30)%360},85%,55%,${0.04 + energy * 0.05})`)
         g.addColorStop(1,   'transparent')
         ctx.beginPath(); ctx.arc(ox, oy, r, 0, Math.PI*2)
         ctx.fillStyle = g; ctx.fill()
       }
 
-      // ── Layer 2: Breathing center core ──
-      const coreR = minD * (0.10 + bass * 0.18 + Math.sin(breathe.current) * 0.04)
-      const gc    = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR)
-      gc.addColorStop(0,   `hsla(${hueShift.current},100%,92%,${0.70 + bass * 0.28})`)
-      gc.addColorStop(0.35,`hsla(${hueShift.current},95%,70%,${0.40 + bass * 0.20})`)
-      gc.addColorStop(0.75,`hsla(${(hueShift.current+25)%360},85%,55%,${0.12 + energy * 0.12})`)
-      gc.addColorStop(1,   'transparent')
+      // ── Layer 2: Breathing center core ──────────────────────────
+      const minD = Math.min(cx, cy)
+      const coreR = minD * (0.09 + bass * 0.15 + Math.sin(breathe.current) * 0.03)
+      const gc = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR)
+      gc.addColorStop(0,    `hsla(${hueShift.current},100%,92%,${0.55 + bass * 0.25})`)
+      gc.addColorStop(0.5,  `hsla(${hueShift.current},95%,70%,${0.30 + bass * 0.18})`)
+      gc.addColorStop(1,    'transparent')
       ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, Math.PI*2)
       ctx.fillStyle = gc; ctx.fill()
 
-      // ── Layer 3: Mid-frequency soft ring ──
-      const ringR = minD * (0.28 + mid * 0.20)
-      const gr    = ctx.createRadialGradient(cx, cy, ringR*0.78, cx, cy, ringR)
-      gr.addColorStop(0,   'transparent')
-      gr.addColorStop(0.5, `hsla(${(hueShift.current+40)%360},90%,72%,${0.08 + mid * 0.18})`)
-      gr.addColorStop(1,   'transparent')
-      ctx.beginPath(); ctx.arc(cx, cy, ringR, 0, Math.PI*2)
-      ctx.fillStyle = gr; ctx.fill()
-
-      // ── Layer 4: Beat ripples — smooth expanding rings ──
+      // ── Layer 3: Beat ripples (reach edge) ──────────────────────
       ripples.current = ripples.current.filter(rp => rp.alpha > 0.01)
       ripples.current.forEach(rp => {
-        rp.r     += (rp.maxR - rp.r) * 0.055
-        rp.alpha *= 0.956
-        const width = rp.maxR * 0.045
-        const gr2   = ctx.createRadialGradient(cx, cy, rp.r - width, cx, cy, rp.r + width)
+        rp.r     += (rp.maxR - rp.r) * 0.045
+        rp.alpha *= 0.962
+        const width = rp.maxR * 0.035
+        const gr2 = ctx.createRadialGradient(rp.cx, rp.cy, Math.max(0, rp.r - width), rp.cx, rp.cy, rp.r + width)
         gr2.addColorStop(0,   'transparent')
         gr2.addColorStop(0.5, `hsla(${rp.hue},100%,82%,${rp.alpha})`)
         gr2.addColorStop(1,   'transparent')
-        ctx.beginPath(); ctx.arc(cx, cy, rp.r, 0, Math.PI*2)
+        ctx.beginPath(); ctx.arc(rp.cx, rp.cy, rp.r, 0, Math.PI*2)
         ctx.fillStyle = gr2; ctx.fill()
       })
 
-      // ── Layer 5: Floating particles — beat-spawned bubbles ──
-      particles.current = particles.current.filter(p => p.life > 0.02)
-      particles.current.forEach(p => {
-        p.x += p.vx
-        p.y += p.vy
-        p.vy -= 0.015          // gentle upward drift
-        p.vx *= 0.985
-        p.life *= 0.978
-        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3)
-        g.addColorStop(0,   `hsla(${p.hue},100%,78%,${p.life})`)
-        g.addColorStop(0.4, `hsla(${p.hue},95%,62%,${p.life * 0.5})`)
+      // ── Layer 4: Bubbles (burst + ambient) ──────────────────────
+      bubbles.current = bubbles.current.filter(b => {
+        if (b.life <= 0.02) return false
+        if (b.kind === 'burst') {
+          // Keep energy until past edge, then fade fast
+          const outOfBounds = b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20
+          if (outOfBounds) return false
+          return true
+        }
+        return b.y > -20
+      })
+      bubbles.current.forEach(b => {
+        b.x += b.vx
+        b.y += b.vy
+        if (b.kind === 'burst') {
+          // Mild drag so they decelerate near the edge — looks like swimming
+          b.vx *= 0.994; b.vy *= 0.994
+          b.life *= 0.993
+        } else {
+          // Ambient bubbles sway sideways gently and rise
+          b.vx += Math.sin((b.y + b.x) * 0.01 + wavePhase.current) * 0.008
+          b.life *= 0.997
+        }
+        const rad = b.r * (2.4 + (b.kind === 'burst' ? 0.4 : 0))
+        const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, rad)
+        g.addColorStop(0,   `hsla(${b.hue},100%,80%,${b.life})`)
+        g.addColorStop(0.4, `hsla(${b.hue},95%,62%,${b.life * 0.5})`)
         g.addColorStop(1,   'transparent')
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 3, 0, Math.PI*2)
+        ctx.beginPath(); ctx.arc(b.x, b.y, rad, 0, Math.PI*2)
         ctx.fillStyle = g; ctx.fill()
       })
+
+      // ── Layer 5: Full-width waveform at bottom ──────────────────
+      // Mirrors frequency data — breathes with the song across the whole screen
+      if (dataArr) {
+        const steps = 96
+        const waveTop = H * 0.86
+        const waveH = H * 0.14
+        ctx.beginPath()
+        ctx.moveTo(0, H)
+        for (let i = 0; i <= steps; i++) {
+          const bin = 1 + Math.floor((i / steps) * 80)
+          const v = (dataArr[bin] || 0) / 255
+          const x = (i / steps) * W
+          // Combine FFT with a slow sine so the wave always has motion
+          const swell = Math.sin(wavePhase.current + i * 0.21) * 0.12
+          const y = waveTop + waveH - v * waveH * 0.9 - swell * waveH * 0.5
+          ctx.lineTo(x, y)
+        }
+        ctx.lineTo(W, H); ctx.closePath()
+        const wg = ctx.createLinearGradient(0, waveTop, 0, H)
+        wg.addColorStop(0, `hsla(${hueShift.current},95%,70%,${0.14 + energy * 0.18})`)
+        wg.addColorStop(1, `hsla(${(hueShift.current+30)%360},90%,55%,${0.02})`)
+        ctx.fillStyle = wg; ctx.fill()
+      }
     }
     draw()
 
@@ -406,6 +485,7 @@ function VolumeControl({ value, accentColor, onChange }: {
 function DownloadSection({ accentColor }: { accentColor: string }) {
   const { currentSong } = usePlayerStore()
   const [dlAudio, setDlAudio] = useState<'idle' | 'loading' | 'done'>('idle')
+  const [dlVideo, setDlVideo] = useState<'idle' | 'loading' | 'done'>('idle')
 
   async function handleAudioDl() {
     if (!currentSong || dlAudio !== 'idle') return
@@ -424,9 +504,30 @@ function DownloadSection({ accentColor }: { accentColor: string }) {
     } catch { setDlAudio('idle') }
   }
 
-  function handleVideoDl() {
+  async function handleVideoDl() {
+    if (!currentSong || dlVideo !== 'idle') return
+    setDlVideo('loading')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not signed in')
+      const res = await fetch(
+        `${API_BASE}/download/video/${currentSong.youtube_id}?quality=720&token=${encodeURIComponent(session.access_token)}`,
+      )
+      if (!res.ok) throw new Error(await res.text())
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `${currentSong.title.replace(/[^\w\s\-]/g, '').trim().slice(0, 60) || 'video'}.mp4`
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setDlVideo('done')
+      setTimeout(() => setDlVideo('idle'), 4000)
+    } catch { setDlVideo('idle') }
+  }
+
+  function handleYouTubeOpen() {
     if (!currentSong) return
-    // Open YouTube — browser can save via right-click or extension
     window.open(`https://www.youtube.com/watch?v=${currentSong.youtube_id}`, '_blank', 'noopener')
   }
 
@@ -434,7 +535,7 @@ function DownloadSection({ accentColor }: { accentColor: string }) {
     <div className="flex gap-2 mb-4 flex-shrink-0">
       {/* Audio download */}
       <button onClick={handleAudioDl} disabled={dlAudio === 'loading'}
-        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl text-xs font-bold transition-all hover:scale-105 active:scale-95 disabled:opacity-60"
+        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-xs font-bold transition-all hover:scale-105 active:scale-95 disabled:opacity-60"
         style={{
           background: dlAudio === 'done' ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.07)',
           border: `1px solid ${dlAudio === 'done' ? 'rgba(16,185,129,0.35)' : 'rgba(255,255,255,0.12)'}`,
@@ -446,16 +547,30 @@ function DownloadSection({ accentColor }: { accentColor: string }) {
         MP3
       </button>
 
+      {/* Video download — streams MP4 from backend, never stored */}
+      <button onClick={handleVideoDl} disabled={dlVideo === 'loading'}
+        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-xs font-bold transition-all hover:scale-105 active:scale-95 disabled:opacity-60"
+        style={{
+          background: dlVideo === 'done' ? 'rgba(16,185,129,0.15)' : `rgba(${accentColor},0.12)`,
+          border: `1px solid ${dlVideo === 'done' ? 'rgba(16,185,129,0.35)' : `rgba(${accentColor},0.28)`}`,
+          color: dlVideo === 'done' ? '#10b981' : `rgba(${accentColor},0.95)`,
+        }}
+        title="Download 720p MP4 (streamed, not stored)">
+        {dlVideo === 'loading' ? <Loader2 size={13} className="animate-spin" />
+          : dlVideo === 'done'   ? <Check size={13} />
+          : <MonitorPlay size={13} />}
+        MP4
+      </button>
+
       {/* Open on YouTube */}
-      <button onClick={handleVideoDl}
-        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl text-xs font-bold transition-all hover:scale-105 active:scale-95"
+      <button onClick={handleYouTubeOpen}
+        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-xs font-bold transition-all hover:scale-105 active:scale-95"
         style={{
           background: 'rgba(255,50,50,0.10)',
           border: '1px solid rgba(255,50,50,0.22)',
           color: 'rgba(255,180,180,0.9)',
         }}
-        title="Opens YouTube — use your browser or an extension to save">
-        <MonitorPlay size={13} />
+        title="Open on YouTube">
         <span>YouTube ↗</span>
       </button>
     </div>
@@ -645,11 +760,11 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
         {/* MAGIC CANVAS — sits behind everything inside player */}
         {magicOn && <MagicCanvas accentColor={accentColor} onBeat={onMagicBeat} />}
 
-        {/* Spotlight vignette when magic is on */}
+        {/* Soft edge vignette when magic is on — lets bubbles breathe at edges */}
         {magicOn && (
           <div className="absolute inset-0 pointer-events-none" style={{
             zIndex: 3,
-            background: 'radial-gradient(ellipse 60% 65% at 50% 52%, transparent 30%, rgba(0,0,0,0.72) 72%, rgba(0,0,0,0.92) 100%)',
+            background: 'radial-gradient(ellipse 85% 90% at 50% 52%, transparent 55%, rgba(0,0,0,0.28) 88%, rgba(0,0,0,0.55) 100%)',
             animation: 'spotlight-appear 0.6s ease forwards',
           }} />
         )}
@@ -664,10 +779,10 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
         )}
 
         {/* Main content — fits to screen, no scroll */}
-        <div className="relative flex flex-col h-full max-w-md mx-auto w-full px-4 sm:px-5 no-scrollbar" style={{ zIndex: 10, overscrollBehavior: 'contain', overflow: 'hidden' }}>
+        <div className="relative flex flex-col h-full max-w-md sm:max-w-lg lg:max-w-2xl xl:max-w-3xl mx-auto w-full px-4 sm:px-5 lg:px-0 no-scrollbar" style={{ zIndex: 10, overscrollBehavior: 'contain', overflow: 'hidden' }}>
 
           {/* Top bar */}
-          <div className="flex items-center justify-between pt-4 pb-3 flex-shrink-0">
+          <div className="flex items-center justify-between pt-4 pb-3 flex-shrink-0 lg:px-6">
             <button onClick={() => setExpanded(false)}
               className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95"
               style={{ background: 'rgba(255,255,255,0.08)' }}>
@@ -715,10 +830,10 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
           <div className="flex items-center justify-center flex-1 min-h-0 py-1">
             <div className="relative overflow-hidden shadow-2xl"
               style={{
-                width: showVideo ? 'min(86vw, 340px)' : 'min(52vw, 220px, 28dvh)',
+                width: showVideo ? 'min(92vw, 620px)' : 'min(60vw, 360px, 38dvh)',
                 aspectRatio: showVideo ? '16/9' : '1/1',
-                maxHeight: showVideo ? 'min(42vw, 26dvh)' : 'min(55vw, 28dvh)',
-                borderRadius: showVideo ? '18px' : '22px',
+                maxHeight: showVideo ? 'min(52vw, 36dvh)' : 'min(60vw, 38dvh)',
+                borderRadius: showVideo ? '22px' : '26px',
                 boxShadow: `0 30px 80px rgba(${accentColor},0.4), 0 8px 30px rgba(0,0,0,0.8)`,
                 transition: 'all 0.45s cubic-bezier(0.16,1,0.3,1)',
               }}>
@@ -797,8 +912,8 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{currentSong.movie_name || 'Unknown'}</p>
           </div>
 
-          {/* Seek bar — FIX 4d: shown in BOTH audio and video modes */}
-          <div className="mb-2 flex-shrink-0">
+          {/* Seek bar — edge-to-edge on desktop, FIX 4d shown in BOTH audio/video */}
+          <div className="mb-2 flex-shrink-0 -mx-4 sm:-mx-5 lg:mx-0 px-4 sm:px-5 lg:px-2">
             <SeekBar
               pct={showVideo ? vidPct : pct}
               accent={accentColor}
@@ -811,7 +926,7 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
           </div>
 
           {/* Controls */}
-          <div className="flex items-center justify-between mb-4 flex-shrink-0">
+          <div className="flex items-center justify-between mb-4 flex-shrink-0 lg:px-6">
             <button onClick={toggleShuffle} className="p-2.5 rounded-full transition-all hover:scale-110 active:scale-95"
               style={{ color: shuffle ? `rgb(${accentColor})` : 'rgba(255,255,255,0.3)' }}>
               <Shuffle size={19} />
@@ -847,12 +962,14 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
           </div>
 
           {/* Volume — smooth visual bar (FX5) */}
-          <div className="flex-shrink-0 mb-3">
+          <div className="flex-shrink-0 mb-3 lg:px-6">
             <VolumeControl accentColor={accentColor} value={volume} onChange={setVolume} />
           </div>
 
           {/* Download section */}
-          <DownloadSection accentColor={accentColor} />
+          <div className="lg:px-6 flex-shrink-0">
+            <DownloadSection accentColor={accentColor} />
+          </div>
         </div>
       </div>
     </>

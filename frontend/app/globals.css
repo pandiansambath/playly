@@ -744,37 +744,69 @@ main { animation: fade-in 0.3s cubic-bezier(0.16,1,0.3,1); }
 .logo-bar { transform-origin: bottom; animation: logo-bar-dance ease-in-out infinite; }
 
 /* ═══════════════════════════════════════════════════════════
-   LANDING PAGE — fit viewport exactly
+   LANDING PAGE — fits viewport, scrolls when content overflows
+   (fixes Chrome issue where signup button was pushed below fold)
    ═══════════════════════════════════════════════════════════ */
 .landing-root {
-  position: fixed;
-  inset: 0;
+  min-height: 100dvh;
   display: flex;
-  overflow: hidden;
-  height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  position: relative;
 }
 
 .landing-left {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 2rem 3rem;
+  padding: clamp(1.2rem, 4vh, 2rem) clamp(1.5rem, 5vw, 3rem);
   flex: 1;
   position: relative;
   z-index: 10;
-  overflow: hidden;
+  min-height: 100dvh;
+}
+
+/* On short viewports, stop centering so nothing clips */
+@media (max-height: 780px) {
+  .landing-left { justify-content: flex-start; padding-top: 1.2rem; }
 }
 
 /* Scale-down hero text on short screens */
 @media (max-height: 700px) {
-  .landing-hero-title   { font-size: clamp(3rem, 8vw, 5rem) !important; }
+  .landing-hero-title   { font-size: clamp(2.2rem, 6vw, 3.2rem) !important; }
   .landing-feature-grid { display: none !important; }
   .landing-waveform     { display: none !important; }
 }
 @media (max-height: 600px) {
-  .landing-hero-title   { font-size: 2.5rem !important; }
+  .landing-hero-title   { font-size: 2rem !important; }
   .landing-subtitle     { display: none !important; }
 }
+
+/* Mobile compact music disc (shown in left panel) */
+.landing-mobile-disc {
+  display: none;
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  position: relative;
+  flex-shrink: 0;
+  background: radial-gradient(circle, rgba(139,92,246,0.25) 0%, transparent 70%);
+}
+.landing-mobile-disc::before {
+  content: ''; position: absolute; inset: -3px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, #8B5CF6, #EC4899, #F97316, #06B6D4, #8B5CF6);
+  filter: blur(5px); opacity: 0.55;
+  animation: spin-disc 8s linear infinite;
+}
+.landing-mobile-disc > .landing-mobile-disc-inner {
+  position: absolute; inset: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1a0a3a, #0f0715);
+  border: 1px solid rgba(139,92,246,0.25);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 18px rgba(139,92,246,0.4);
+}
+@media (max-width: 767px) { .landing-mobile-disc { display: block; } }
 
 /* ═══════════════════════════════════════════════════════════
    WAVEFORM BARS (landing page)

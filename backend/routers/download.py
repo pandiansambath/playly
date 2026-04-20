@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from services.auth import get_current_user
 from services.supabase_client import supabase
 from services.ytdlp import download_audio
-from services.loader_to import download_audio_via_loader
+from services.loader_to import download_audio_via_loader, resolve_video_download
 
 
 async def _prewarm_cdn(url: str) -> None:
@@ -158,6 +158,51 @@ async def download_song_stream(req: DownloadRequest, request: Request, user=Depe
         event_stream(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/download/video/{youtube_id}")
+async def download_video(youtube_id: str, quality: str = "720", token: str = ""):
+    """Stream an MP4 of the requested video straight through to the client.
+
+    The server never holds the bytes on disk and nothing is written to the
+    database — this is purely a proxy. ``token`` is the Supabase access token
+    passed as a query param (browsers cannot send auth headers on plain
+    <a download> clicks), and we verify it the same way as header-based auth.
+    """
+    import re as _re
+    if not _re.fullmatch(r"[A-Za-z0-9_-]{6,20}", youtube_id):
+        raise HTTPException(400, "Invalid youtube_id")
+    if quality not in {"360", "480", "720", "1080"}:
+        raise HTTPException(400, "Invalid quality")
+
+    from services.auth import verify_token
+    user = await verify_token(token)
+    if not user:
+        raise HTTPException(401, "Unauthorized")
+
+    try:
+        download_url, title = await resolve_video_download(youtube_id, quality)
+    except Exception as e:
+        raise HTTPException(502, f"Video conversion failed: {e}")
+
+    safe_title = _re.sub(r"[^\w\s\-]", "", title).strip()[:60] or youtube_id
+    filename = f"{safe_title}.mp4"
+
+    async def stream_bytes():
+        async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
+            async with client.stream("GET", download_url) as resp:
+                resp.raise_for_status()
+                async for chunk in resp.aiter_bytes(chunk_size=64 * 1024):
+                    yield chunk
+
+    return StreamingResponse(
+        stream_bytes(),
+        media_type="video/mp4",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
     )
 
 
