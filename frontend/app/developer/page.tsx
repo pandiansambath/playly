@@ -496,7 +496,7 @@ export default function DeveloperPage() {
               </a>
             </div>
             <div className="dev-hero-metrics">
-              <div><b>17th</b><span>Anna University<br/><small style={{fontSize:'0.75em',opacity:0.85}}>🥇 Gold Medal</small></span></div>
+              <div><b>17th</b><span>Anna University · Gold Medal</span></div>
               <div><b>TCS</b><span>Digital · Innovator</span></div>
               <div><b>2024 →</b><span>Systems Engineer</span></div>
             </div>
