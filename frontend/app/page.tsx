@@ -61,6 +61,22 @@ function PlayLyLogo({ size = 'xl' }: { size?: 'sm' | 'xl' }) {
 }
 
 // ─────────────────────────────────────────────────────────
+// SPLIT TEXT — letter-by-letter rise (used in landing hero)
+// ─────────────────────────────────────────────────────────
+function SplitText({ text, gradient, delay = 0 }: { text: string; gradient?: boolean; delay?: number }) {
+  return (
+    <span className={`split-text ${gradient ? 'split-text-gradient' : ''}`}>
+      {text.split('').map((c, i) => (
+        <span key={i} className="split-char"
+          style={{ animationDelay: `${delay + i * 0.035}s` }}>
+          {c === ' ' ? '\u00A0' : c}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
 // LANDING PAGE
 // ─────────────────────────────────────────────────────────
 function LandingPage() {
@@ -71,6 +87,32 @@ function LandingPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const discRef = useRef<HTMLDivElement | null>(null)
+
+  // Mouse-tracking spotlight + parallax tilt on the right disc
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    let raf = 0
+    function onMove(e: MouseEvent) {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const rect = root!.getBoundingClientRect()
+        const x = ((e.clientX - rect.left) / rect.width) * 100
+        const y = ((e.clientY - rect.top) / rect.height) * 100
+        root!.style.setProperty('--mx', `${x}%`)
+        root!.style.setProperty('--my', `${y}%`)
+        if (discRef.current) {
+          const dx = (e.clientX / window.innerWidth - 0.5) * 18
+          const dy = (e.clientY / window.innerHeight - 0.5) * 18
+          discRef.current.style.transform = `perspective(900px) rotateY(${dx}deg) rotateX(${-dy}deg)`
+        }
+      })
+    }
+    window.addEventListener('mousemove', onMove, { passive: true })
+    return () => { window.removeEventListener('mousemove', onMove); cancelAnimationFrame(raf) }
+  }, [])
 
   async function signInGoogle() {
     setLoading(true); setError('')
@@ -103,7 +145,13 @@ function LandingPage() {
   }
 
   return (
-    <div className="landing-root" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div className="landing-root" ref={rootRef} style={{ fontFamily: 'Inter, sans-serif' }}>
+      {/* ─── Animated grid backdrop ─── */}
+      <div className="landing-grid pointer-events-none" />
+
+      {/* ─── Cursor-following spotlight ─── */}
+      <div className="landing-spotlight pointer-events-none" />
+
       {/* ─── Star field ─── */}
       {STARS.map((s, i) => (
         <div key={i} className="landing-star pointer-events-none"
@@ -116,6 +164,11 @@ function LandingPage() {
             animationDelay: s.del,
           }} />
       ))}
+
+      {/* ─── Shooting stars (occasional streaks across the sky) ─── */}
+      <div className="shooting-star" style={{ top: '12%', left: '-10%', animationDelay: '2s' }} />
+      <div className="shooting-star" style={{ top: '38%', left: '-10%', animationDelay: '7s' }} />
+      <div className="shooting-star" style={{ top: '64%', left: '-10%', animationDelay: '13s' }} />
 
       {/* ─── Aurora blobs ─── */}
       <div className="aurora-blob" style={{ width: 500, height: 500, top: '-10%', left: '-5%', background: 'rgba(139,92,246,0.22)', animationDelay: '0s' }} />
@@ -137,7 +190,7 @@ function LandingPage() {
 
         {/* Hero */}
         <div className="mb-4 fade-in delay-100">
-          <h1 className="landing-hero-title fade-in"
+          <h1 className="landing-hero-title"
             style={{
               fontSize: 'clamp(2.2rem, 5vw, 3.8rem)',
               fontWeight: 900,
@@ -145,16 +198,12 @@ function LandingPage() {
               letterSpacing: '-0.03em',
               color: 'var(--text-primary)',
             }}>
-            Your music,{' '}
-            <span style={{
-              background: 'linear-gradient(120deg, var(--accent), var(--accent-alt), #f97316)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-            }}>beautifully</span>
-            <br />streamed.
+            <SplitText text="Your music," />{' '}
+            <SplitText text="beautifully" gradient delay={0.42} />
+            <br />
+            <SplitText text="streamed." delay={0.85} />
           </h1>
-          <p className="landing-subtitle mt-3 text-sm leading-relaxed"
+          <p className="landing-subtitle mt-3 text-sm leading-relaxed fade-in delay-500"
             style={{ color: 'var(--text-secondary)', maxWidth: 360 }}>
             Search millions of songs, build playlists, and listen instantly — all powered by YouTube.
           </p>
@@ -295,11 +344,25 @@ function LandingPage() {
       {/* ─── RIGHT PANEL — animated notes visual ─── */}
       <div className="hidden md:flex flex-col items-center justify-center flex-1 relative overflow-hidden"
         style={{ zIndex: 1 }}>
+        {/* Orbiting equalizer ring around the disc */}
+        <div className="orbit-eq pointer-events-none">
+          {Array.from({ length: 32 }).map((_, i) => (
+            <span key={i}
+              className="orbit-eq-bar"
+              style={{
+                transform: `rotate(${(i / 32) * 360}deg) translateY(-160px)`,
+                animationDelay: `${(i * 0.05) % 1.6}s`,
+              }} />
+          ))}
+        </div>
+
         {/* Big glowing disc */}
-        <div className="relative flex items-center justify-center" style={{
+        <div ref={discRef} className="landing-disc-tilt relative flex items-center justify-center" style={{
           width: 260, height: 260,
           borderRadius: '50%',
           background: `radial-gradient(circle, rgba(139,92,246,0.18) 0%, transparent 70%)`,
+          transition: 'transform 0.18s ease-out',
+          willChange: 'transform',
         }}>
           {/* Outer ring */}
           <div style={{

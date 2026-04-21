@@ -112,7 +112,11 @@ function EqCanvas({ isPlaying, accentColor }: { isPlaying: boolean; accentColor:
 // ═══════════════════════════════════════════════════════════
 type Bubble = {
   x: number; y: number; vx: number; vy: number; r: number; life: number; hue: number;
-  kind: 'burst' | 'ambient' // burst = beat-spawned edge-flyer, ambient = slow floater
+  // burst   = beat-spawned edge-flyer
+  // ambient = slow floater steered by gravity point
+  // missile = high-beat comet with a streaking trail
+  kind: 'burst' | 'ambient' | 'missile'
+  trail?: { x: number; y: number }[]
 }
 
 function MagicCanvas({ accentColor, onBeat }: {
@@ -130,6 +134,8 @@ function MagicCanvas({ accentColor, onBeat }: {
   const ambSpawn   = useRef(0)
   const beatCount  = useRef(0)
   const lastSplit  = useRef(0)
+  const lastMissile = useRef(0)
+  const missileSeen = useRef(0) // beat number at last missile fire
   const initialFired = useRef(false)
   // Slow-drifting gravity point the ambient bubbles coalesce toward.
   // Moves on a Lissajous path so groups re-form in different spots.
@@ -181,31 +187,55 @@ function MagicCanvas({ accentColor, onBeat }: {
       const cy = H / 2
       const maxD = Math.hypot(cx, cy) // distance to corner
 
+      // Fire a missile barrage — comets with streaking trails that shoot from
+      // center to the edges. Reused by the initial burst AND by high-beat hits.
+      const fireMissiles = (count: number, strengthBoost = 0) => {
+        const baseSpeed = (maxD / 70) * (1 + strengthBoost * 0.35)
+        for (let i = 0; i < count; i++) {
+          const angle = (i / count) * Math.PI * 2 + Math.random() * 0.08
+          const sp = baseSpeed * (0.92 + Math.random() * 0.3)
+          bubbles.current.push({
+            x: cx, y: cy,
+            vx: Math.cos(angle) * sp, vy: Math.sin(angle) * sp,
+            r: 3.5 + Math.random() * 2.5 + strengthBoost * 1.5, life: 1,
+            hue: (hueShift.current + (Math.random()*80-40)) % 360,
+            kind: 'missile',
+            trail: [],
+          })
+        }
+      }
+
       // ── Initial dramatic burst on first frame (magic click opens with a bang) ──
       if (!initialFired.current) {
         initialFired.current = true
         ripples.current.push({
           r: 0, maxR: maxD * 1.05, alpha: 0.55, hue: hueShift.current, cx, cy,
         })
-        const count = 26
-        const baseSpeed = (maxD / 75)
-        for (let i = 0; i < count; i++) {
-          const angle = (i / count) * Math.PI * 2
-          const sp = baseSpeed * (0.9 + Math.random() * 0.4)
-          bubbles.current.push({
-            x: cx, y: cy,
-            vx: Math.cos(angle) * sp, vy: Math.sin(angle) * sp,
-            r: 3 + Math.random() * 3, life: 1,
-            hue: (hueShift.current + (Math.random()*80-40)) % 360,
-            kind: 'burst',
-          })
-        }
+        fireMissiles(22, 0.2)
       }
 
       if (isBeat) {
         beatTime.current = now
         beatCount.current++
         const beatStrength = Math.min(1.4, Math.max(0.5, strength - 1))
+
+        // Missile barrage — only on genuinely loud beats (so it stays special),
+        // and never more often than every 1.6s, with at least 4 ordinary beats
+        // in between, so it punctuates instead of drowning out the rhythm.
+        const isMissileHit =
+          beatStrength > 1.05 &&
+          now - lastMissile.current > 1600 &&
+          beatCount.current - missileSeen.current >= 4
+        if (isMissileHit) {
+          lastMissile.current = now
+          missileSeen.current = beatCount.current
+          fireMissiles(Math.round(10 + beatStrength * 6), beatStrength)
+          // Bright leading shockwave that races out with the missiles
+          ripples.current.push({
+            r: 0, maxR: maxD * 1.12, alpha: 0.45,
+            hue: hueShift.current, cx, cy,
+          })
+        }
 
         // Weak beats: just a small inner ripple + bubbles get a gentle push
         // toward the gravity point so the group tightens rhythmically.
@@ -361,7 +391,15 @@ function MagicCanvas({ accentColor, onBeat }: {
       bubbles.current.forEach(b => {
         b.x += b.vx
         b.y += b.vy
-        if (b.kind === 'burst') {
+        if (b.kind === 'missile') {
+          // Almost no drag — fly straight to the edge like a comet.
+          b.vx *= 0.998; b.vy *= 0.998
+          b.life *= 0.985
+          if (b.trail) {
+            b.trail.push({ x: b.x, y: b.y })
+            if (b.trail.length > 14) b.trail.shift()
+          }
+        } else if (b.kind === 'burst') {
           // Mild drag so they decelerate near the edge — looks like swimming
           b.vx *= 0.994; b.vy *= 0.994
           b.life *= 0.993
@@ -386,9 +424,20 @@ function MagicCanvas({ accentColor, onBeat }: {
           b.vx *= 0.96; b.vy *= 0.96
           b.life *= 0.996
         }
-        const rad = b.r * (2.4 + (b.kind === 'burst' ? 0.4 : 0))
+        // Streaking trail behind missiles — fades from head to tail
+        if (b.kind === 'missile' && b.trail && b.trail.length > 1) {
+          ctx.lineCap = 'round'
+          for (let i = 1; i < b.trail.length; i++) {
+            const a = b.trail[i - 1], c = b.trail[i]
+            const t = i / b.trail.length            // 0..1 along trail
+            ctx.strokeStyle = `hsla(${b.hue},100%,75%,${b.life * t * 0.7})`
+            ctx.lineWidth   = b.r * (0.6 + t * 0.9)
+            ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke()
+          }
+        }
+        const rad = b.r * (2.4 + (b.kind === 'burst' ? 0.4 : b.kind === 'missile' ? 0.7 : 0))
         const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, rad)
-        g.addColorStop(0,   `hsla(${b.hue},100%,80%,${b.life})`)
+        g.addColorStop(0,   `hsla(${b.hue},100%,${b.kind === 'missile' ? 92 : 80}%,${b.life})`)
         g.addColorStop(0.4, `hsla(${b.hue},95%,62%,${b.life * 0.5})`)
         g.addColorStop(1,   'transparent')
         ctx.beginPath(); ctx.arc(b.x, b.y, rad, 0, Math.PI*2)
@@ -753,12 +802,31 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
       ? latestVideoTime.current
       : wallEst
     audio.currentTime = Math.max(0, Math.min(bestTime, audio.duration || 9999))
+    audio.muted       = false
     audio.volume      = usePlayerStore.getState().volume
+    if (_boost) _boost.gain.value = MAX_BOOST
     audio.play().catch(console.error)
     usePlayerStore.getState().setIsPlaying(true)
     setIsVideoPlaying(false)
     setVidTime(0)
   }, [showVideo]) // eslint-disable-line
+
+  // ── While VIDEO is on, keep the audio element silently in sync with the
+  // YouTube player so the analyser feeds visuals from the same moment in
+  // the song the user is hearing. Resync every 4s (~1s of drift is fine).
+  useEffect(() => {
+    if (!showVideo) return
+    const audio = getAudio()
+    if (!audio) return
+    const id = setInterval(() => {
+      const drift = Math.abs(audio.currentTime - latestVideoTime.current)
+      if (latestVideoTime.current > 0 && drift > 1.0) {
+        audio.currentTime = latestVideoTime.current
+      }
+      if (audio.paused) audio.play().catch(() => {})
+    }, 4000)
+    return () => clearInterval(id)
+  }, [showVideo])
 
   // ── Tab hidden while VIDEO ON → switch to audio ───────
   useEffect(() => {
@@ -772,7 +840,9 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
         : videoStartAudioTime.current + elapsed
       if (audio) {
         audio.currentTime = Math.max(0, best)
+        audio.muted       = false
         audio.volume      = usePlayerStore.getState().volume
+        if (_boost) _boost.gain.value = MAX_BOOST
         audio.play().catch(console.error)
         usePlayerStore.getState().setIsPlaying(true)
       }
@@ -791,13 +861,25 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
     )
   }
 
-  // ── VIDEO toggle handler — FIX 4c: mute audio BEFORE state change ──
+  // ── VIDEO toggle handler ──
+  // When entering video mode we DON'T pause the audio element — instead we
+  // silence the WebAudio graph by setting the gain to 0. The MediaElement →
+  // analyser → gain → destination chain still feeds frequency data to the
+  // analyser, so the magic visualizer keeps reacting to beats while the
+  // YouTube iframe handles user-audible playback.
   function handleVideoToggle() {
+    ensureAnalyser()
+    const audio = getAudio()
     if (!showVideo) {
-      // Turning video ON: kill audio immediately so no dual audio
-      const audio = getAudio()
-      if (audio) { audio.volume = 0; audio.pause() }
+      // Turning video ON: silence audio output but keep the element playing
+      // so the analyser still sees real-time frequency data for visuals.
+      if (_boost) _boost.gain.value = 0
+      if (audio) { audio.muted = true; audio.play().catch(() => {}) }
       usePlayerStore.getState().setIsPlaying(false)
+    } else {
+      // Turning video OFF: restore audible audio
+      if (_boost) _boost.gain.value = MAX_BOOST
+      if (audio) audio.muted = false
     }
     setShowVideo(!showVideo)
   }
@@ -1061,9 +1143,20 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
             </button>
           </div>
 
-          {/* Volume — smooth visual bar (FX5) */}
+          {/* Volume — smooth visual bar (FX5).
+              In video mode the audio element is muted; we forward the value
+              to the YouTube iframe so the slider still controls what the
+              user hears. */}
           <div className="flex-shrink-0 mb-3 lg:px-6">
-            <VolumeControl accentColor={accentColor} value={volume} onChange={setVolume} />
+            <VolumeControl accentColor={accentColor} value={volume} onChange={(v) => {
+              setVolume(v)
+              if (showVideo) {
+                iframeRef.current?.contentWindow?.postMessage(
+                  JSON.stringify({ event: 'command', func: 'setVolume', args: [Math.round(v * 100)] }),
+                  '*',
+                )
+              }
+            }} />
           </div>
 
           {/* Download section */}

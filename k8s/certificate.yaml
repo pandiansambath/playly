@@ -1,0 +1,23 @@
+# Certificate — explicitly requests a TLS cert from Let's Encrypt
+# (rather than relying on the ingress-shim, which the rewrite-target on
+# playly-ingress interferes with). cert-manager will create Order +
+# Challenge resources; the HTTP-01 challenge is solved via the
+# letsencrypt-prod ClusterIssuer's ingressTemplate.
+#
+# The resulting Secret (playly-tls) is consumed by playly-ingress.
+# Auto-renews ~30 days before expiry — no manual action needed.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: playly-tls
+  namespace: playly
+spec:
+  secretName: playly-tls
+  duration: 2160h      # 90d
+  renewBefore: 720h    # 30d
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - playly.online
+    - www.playly.online

@@ -884,3 +884,114 @@ main { animation: fade-in 0.3s cubic-bezier(0.16,1,0.3,1); }
 .magic-btn-beat { animation: magic-beat-pop 0.28s ease-out; }
 
 /* v2.0-playly-fixes */
+
+/* ═══════════════════════════════════════════════════════════
+   LANDING WOW LAYER (v2.1) — grid, spotlight, shooting stars,
+   split-text reveal, orbital equalizer, disc tilt
+   ═══════════════════════════════════════════════════════════ */
+
+/* Subtle moving grid backdrop — diagonal scroll, very low opacity */
+.landing-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(139,92,246,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139,92,246,0.06) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 30%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 30%, transparent 80%);
+  animation: grid-pan 24s linear infinite;
+  z-index: 0;
+}
+@keyframes grid-pan {
+  from { background-position: 0 0, 0 0; }
+  to   { background-position: 56px 56px, 56px 56px; }
+}
+
+/* Cursor-following spotlight — soft accent glow that follows the mouse */
+.landing-spotlight {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    420px circle at var(--mx, 50%) var(--my, 30%),
+    rgba(139,92,246,0.18),
+    rgba(236,72,153,0.06) 35%,
+    transparent 60%
+  );
+  z-index: 0;
+  transition: background 0.12s linear;
+}
+
+/* Shooting star — diagonal streak across the screen */
+.shooting-star {
+  position: absolute;
+  width: 120px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.95), transparent);
+  filter: drop-shadow(0 0 6px rgba(255,255,255,0.7));
+  opacity: 0;
+  pointer-events: none;
+  animation: shoot 14s linear infinite;
+  z-index: 1;
+}
+@keyframes shoot {
+  0%   { transform: translate(0, 0)       rotate(20deg); opacity: 0; }
+  4%   { opacity: 1; }
+  10%  { transform: translate(120vw, 40vh) rotate(20deg); opacity: 0; }
+  100% { transform: translate(120vw, 40vh) rotate(20deg); opacity: 0; }
+}
+
+/* Letter-by-letter hero reveal */
+.split-text { display: inline-block; }
+.split-text-gradient {
+  background: linear-gradient(120deg, var(--accent), var(--accent-alt), #f97316);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  background-size: 200% auto;
+  animation: gradient-shift 5s ease infinite;
+}
+.split-char {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(0.55em) rotate(6deg);
+  animation: split-rise 0.7s cubic-bezier(0.22,1,0.36,1) forwards;
+}
+@keyframes split-rise {
+  to { opacity: 1; transform: translateY(0) rotate(0); }
+}
+
+/* Orbital equalizer ring around the right-panel disc */
+.orbit-eq {
+  position: absolute;
+  width: 320px; height: 320px;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: orbit-spin 26s linear infinite;
+}
+@keyframes orbit-spin { to { transform: rotate(360deg); } }
+.orbit-eq-bar {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 3px; height: 14px;
+  margin: -7px -1.5px;
+  border-radius: 2px;
+  background: linear-gradient(to top, rgba(139,92,246,0.9), rgba(236,72,153,0.6));
+  transform-origin: center;
+  animation: orbit-eq-pulse 1.6s ease-in-out infinite;
+  filter: drop-shadow(0 0 4px rgba(139,92,246,0.6));
+}
+@keyframes orbit-eq-pulse {
+  0%, 100% { height: 8px;  opacity: 0.4; }
+  50%       { height: 22px; opacity: 1;   }
+}
+
+/* Disc tilt wrapper */
+.landing-disc-tilt { transform: perspective(900px) rotateY(0) rotateX(0); }
+
+/* Reduced-motion guard */
+@media (prefers-reduced-motion: reduce) {
+  .landing-grid, .shooting-star, .split-char,
+  .orbit-eq, .orbit-eq-bar { animation: none !important; }
+  .split-char { opacity: 1; transform: none; }
+}

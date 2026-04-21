@@ -356,12 +356,10 @@ export default function DeveloperPage() {
 
       {/* ── Top bar ─────────────────────────────────────── */}
       <div className="dev-topbar">
-        <Link href="/" className="dev-back">
-          <span className="dev-back-icon"><ArrowLeft size={14} /></span>
-          <span className="dev-back-text">
-            <em>back to</em>
-            <b>PlayLy</b>
-          </span>
+        <Link href="/" className="dev-back" aria-label="Back to PlayLy">
+          <span className="dev-back-icon"><ArrowLeft size={15} /></span>
+          <span className="dev-back-label">PlayLy</span>
+          <span className="dev-back-shine" aria-hidden />
         </Link>
         <div className="dev-topbar-right">
           <button
@@ -560,46 +558,50 @@ export default function DeveloperPage() {
           border-bottom: 1px solid rgba(255,255,255,0.06);
         }
         .dev-back {
+          position: relative; overflow: hidden;
           display: inline-flex; align-items: center; gap: 10px;
-          padding: 7px 14px 7px 7px; border-radius: 99px;
-          background: linear-gradient(135deg, rgba(139,92,246,0.14), rgba(236,72,153,0.08));
-          border: 1px solid rgba(139,92,246,0.25);
-          color: rgba(255,255,255,0.9);
+          padding: 6px 18px 6px 6px; border-radius: 999px;
+          background: linear-gradient(135deg, rgba(139,92,246,0.18), rgba(236,72,153,0.10));
+          border: 1px solid rgba(255,255,255,0.10);
+          color: rgba(255,255,255,0.95);
           text-decoration: none;
-          transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
-          box-shadow: 0 2px 10px rgba(139,92,246,0.08);
+          transition: transform 0.25s cubic-bezier(0.16,1,0.3,1),
+                      box-shadow  0.25s cubic-bezier(0.16,1,0.3,1),
+                      border-color 0.25s ease;
+          box-shadow: 0 4px 18px rgba(139,92,246,0.18), inset 0 0 0 1px rgba(255,255,255,0.04);
         }
         .dev-back-icon {
           display: inline-flex; align-items: center; justify-content: center;
-          width: 26px; height: 26px; border-radius: 50%;
+          width: 30px; height: 30px; border-radius: 999px;
           background: linear-gradient(135deg, #8B5CF6, #EC4899);
           color: #fff;
-          transition: transform 0.25s cubic-bezier(0.16,1,0.3,1);
-          box-shadow: 0 2px 10px rgba(139,92,246,0.45);
+          transition: transform 0.35s cubic-bezier(0.16,1,0.3,1);
+          box-shadow: 0 4px 14px rgba(139,92,246,0.5);
         }
-        .dev-back-text {
-          display: inline-flex; flex-direction: column; line-height: 1;
-          text-align: left;
-        }
-        .dev-back-text em {
-          font-size: 9px; font-style: normal; font-weight: 600;
-          letter-spacing: 0.14em; text-transform: uppercase;
-          color: rgba(255,255,255,0.42);
-          margin-bottom: 3px;
-        }
-        .dev-back-text b {
-          font-size: 13px; font-weight: 800; letter-spacing: -0.01em;
-          background: linear-gradient(120deg, #fff 0%, #c4b5fd 100%);
+        .dev-back-label {
+          font-size: 13px; font-weight: 700; letter-spacing: 0.01em;
+          background: linear-gradient(120deg, #fff 0%, #c4b5fd 90%);
           -webkit-background-clip: text; background-clip: text;
           -webkit-text-fill-color: transparent;
+          line-height: 1;
+        }
+        .dev-back-shine {
+          position: absolute; inset: 0;
+          background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.22) 50%, transparent 70%);
+          transform: translateX(-120%);
+          pointer-events: none;
         }
         .dev-back:hover {
-          background: linear-gradient(135deg, rgba(139,92,246,0.22), rgba(236,72,153,0.14));
-          border-color: rgba(139,92,246,0.45);
-          transform: translateX(-3px);
-          box-shadow: 0 6px 24px rgba(139,92,246,0.25);
+          transform: translateX(-2px);
+          border-color: rgba(139,92,246,0.55);
+          box-shadow: 0 8px 28px rgba(139,92,246,0.35), inset 0 0 0 1px rgba(255,255,255,0.08);
         }
-        .dev-back:hover .dev-back-icon { transform: translateX(-2px); }
+        .dev-back:hover .dev-back-icon { transform: translateX(-3px) rotate(-8deg); }
+        .dev-back:hover .dev-back-shine { animation: dev-back-shine 0.9s ease; }
+        @keyframes dev-back-shine {
+          0%   { transform: translateX(-120%); }
+          100% { transform: translateX(120%);  }
+        }
         .dev-topbar-right { display: flex; gap: 8px; align-items: center; }
         .dev-music-btn {
           display: flex; align-items: center; gap: 6px;
@@ -947,9 +949,9 @@ export default function DeveloperPage() {
           .dev-panels { grid-template-columns: 1fr; }
           .dev-topbar { padding: 10px 14px; }
           .dev-resume-btn span, .dev-music-btn span { display: none; }
-          .dev-back { padding: 5px 12px 5px 5px; }
-          .dev-back-text em { display: none; }
-          .dev-back-text b { font-size: 12px; }
+          .dev-back { padding: 5px 14px 5px 5px; gap: 8px; }
+          .dev-back-icon { width: 26px; height: 26px; }
+          .dev-back-label { font-size: 12px; }
         }
       `}</style>
     </div>
