@@ -5,6 +5,7 @@ import {
   ArrowLeft, MapPin, Award, Briefcase, GraduationCap, Code2,
   X, ChevronLeft, ChevronRight, Volume2, VolumeX, Download,
   Github, Mail, Sparkles, Heart, Camera, Sun, Moon, Coffee, Mountain, Smile,
+  Volume1, VolumeOff,
 } from 'lucide-react'
 
 // ══════════════════════════════════════════════════════════════
@@ -136,101 +137,50 @@ const TECH = [
 // LFO swells + a soft pentatonic arpeggio loop. Volume 0.32.
 // ══════════════════════════════════════════════════════════════
 function createAmbient() {
-  let ctx: AudioContext | null = null
-  let master: GainNode | null = null
-  let oscs: OscillatorNode[] = []
-  let lfos: OscillatorNode[] = []
-  let arpTimer = 0
+  let audio: HTMLAudioElement | null = null
   let running = false
+  let _volume = 0.55
 
   function start() {
     if (running) return
     try {
-      ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
-
-      // Reverb-like convolver via 2s stereo noise impulse
-      const convolver = ctx.createConvolver()
-      const irLen = ctx.sampleRate * 2.2
-      const ir = ctx.createBuffer(2, irLen, ctx.sampleRate)
-      for (let ch = 0; ch < 2; ch++) {
-        const data = ir.getChannelData(ch)
-        for (let i = 0; i < irLen; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / irLen, 2.4)
+      if (!audio) {
+        audio = new Audio('/page_song.mp3')
+        audio.loop = true
+        audio.volume = _volume
       }
-      convolver.buffer = ir
-
-      // Reverb send mix
-      const dry  = ctx.createGain(); dry.gain.value  = 0.68
-      const wet  = ctx.createGain(); wet.gain.value  = 0.42
-      master = ctx.createGain()
-      master.gain.setValueAtTime(0, ctx.currentTime)
-      master.gain.linearRampToValueAtTime(0.32, ctx.currentTime + 1.8)
-      dry.connect(master)
-      wet.connect(master)
-      master.connect(ctx.destination)
-      convolver.connect(wet)
-
-      // ── PAD: C major 7 chord — C2, E3, G3, B3, C4, E4, G4 ──
-      const padFreqs = [65.41, 164.81, 196.00, 246.94, 261.63, 329.63, 392.00]
-      padFreqs.forEach((f, i) => {
-        const o   = ctx!.createOscillator()
-        o.type    = i % 3 === 0 ? 'sine' : i % 3 === 1 ? 'triangle' : 'sawtooth'
-        o.frequency.value = f
-        o.detune.value = (i % 2 === 0 ? 1 : -1) * (3 + i)  // subtle chorus
-
-        const g = ctx!.createGain()
-        g.gain.value = (0.22 - i * 0.018) / (i < 2 ? 1.8 : 1)
-
-        // Slow LFO swell per voice
-        const lfo = ctx!.createOscillator()
-        lfo.frequency.value = 0.03 + i * 0.009
-        const lg = ctx!.createGain(); lg.gain.value = 0.07
-        lfo.connect(lg); lg.connect(g.gain)
-
-        o.connect(g); g.connect(dry); g.connect(convolver)
-        o.start(); lfo.start()
-        oscs.push(o); lfos.push(lfo)
-      })
-
-      // ── ARPEGGIO: soft C pentatonic sparkle ──
-      // C4 E4 G4 A4 C5 E5 — looping at ~3 BPM sixteenth-note feel
-      const arpNotes = [261.63, 329.63, 392.00, 440.00, 523.25, 659.25, 523.25, 440.00]
-      let arpIdx = 0
-      function playArp() {
-        if (!ctx || !running) return
-        const freq = arpNotes[arpIdx % arpNotes.length]
-        arpIdx++
-        const o = ctx.createOscillator()
-        o.type = 'sine'; o.frequency.value = freq
-        const g = ctx.createGain()
-        const t = ctx.currentTime
-        g.gain.setValueAtTime(0, t)
-        g.gain.linearRampToValueAtTime(0.055, t + 0.04)
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.65)
-        o.connect(g); g.connect(dry); g.connect(convolver)
-        o.start(t); o.stop(t + 0.7)
-        arpTimer = window.setTimeout(playArp, 360 + Math.random() * 120) as any
-      }
-      setTimeout(playArp, 1800)
-
+      audio.play().catch(() => {})
       running = true
     } catch { }
   }
 
   function stop() {
-    clearTimeout(arpTimer)
-    if (!running || !ctx || !master) return
-    const t = ctx.currentTime
-    master.gain.cancelScheduledValues(t)
-    master.gain.setValueAtTime(master.gain.value, t)
-    master.gain.linearRampToValueAtTime(0, t + 0.8)
-    setTimeout(() => {
-      try { oscs.forEach(o => o.stop()); lfos.forEach(l => l.stop()); ctx?.close() } catch { }
-      oscs = []; lfos = []; ctx = null; master = null
-      running = false
-    }, 900)
+    if (!running || !audio) return
+    // Fade out by stepping down volume over 800ms
+    const steps = 16
+    const startVol = audio.volume
+    let step = 0
+    const timer = setInterval(() => {
+      step++
+      if (audio) audio.volume = Math.max(0, startVol * (1 - step / steps))
+      if (step >= steps) {
+        clearInterval(timer)
+        audio?.pause()
+        if (audio) audio.currentTime = 0
+        if (audio) audio.volume = _volume
+        running = false
+      }
+    }, 50)
   }
 
-  return { start, stop, isRunning: () => running }
+  function setVolume(v: number) {
+    _volume = Math.max(0, Math.min(1, v))
+    if (audio) audio.volume = _volume
+  }
+
+  function getVolume() { return _volume }
+
+  return { start, stop, setVolume, getVolume, isRunning: () => running }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -331,7 +281,10 @@ export default function DeveloperPage() {
   const [activeMood, setActiveMood] = useState<Mood | 'all'>('all')
   const [musicOn, setMusicOn] = useState(true)
   const [musicStarted, setMusicStarted] = useState(false)
+  const [showVolPanel, setShowVolPanel] = useState(false)
+  const [volume, setVolume] = useState(0.55)
   const ambientRef = useRef<ReturnType<typeof createAmbient> | null>(null)
+  const volPanelRef = useRef<HTMLDivElement>(null)
 
   // Initialize ambient music lazily after first interaction (browser autoplay policies)
   useEffect(() => {
@@ -358,6 +311,18 @@ export default function DeveloperPage() {
     if (musicOn) { ambientRef.current.start(); setMusicStarted(true) }
     else ambientRef.current.stop()
   }, [musicOn])
+
+  // Close volume panel when clicking outside
+  useEffect(() => {
+    if (!showVolPanel) return
+    const close = (e: MouseEvent) => {
+      if (volPanelRef.current && !volPanelRef.current.contains(e.target as Node)) {
+        setShowVolPanel(false)
+      }
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [showVolPanel])
 
 
   const filtered = useMemo(() =>
@@ -409,24 +374,75 @@ export default function DeveloperPage() {
           <span className="dev-back-shine" aria-hidden />
         </Link>
         <div className="dev-topbar-right">
-          <button
-            onClick={() => setMusicOn(v => !v)}
-            className="dev-music-btn"
-            title={musicOn ? 'Mute ambience' : 'Play ambience'}
-            style={{
-              background: musicOn ? 'linear-gradient(135deg,rgba(139,92,246,0.25),rgba(236,72,153,0.22))' : 'rgba(255,255,255,0.05)',
-              border: `1px solid ${musicOn ? 'rgba(139,92,246,0.45)' : 'rgba(255,255,255,0.10)'}`,
-            }}>
-            {musicOn
-              ? <Volume2 size={14} style={{ color: '#c4b5fd' }} />
-              : <VolumeX size={14} style={{ color: 'rgba(255,255,255,0.45)' }} />}
-            <span>{musicOn ? 'Ambience on' : 'Muted'}</span>
-            {musicOn && (
-              <span className="dev-music-eq">
-                <i /><i /><i />
-              </span>
+          {/* Music button + volume panel */}
+          <div ref={volPanelRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowVolPanel(v => !v)}
+              className="dev-music-btn"
+              title="Music controls"
+              style={{
+                background: musicOn ? 'linear-gradient(135deg,rgba(139,92,246,0.25),rgba(236,72,153,0.22))' : 'rgba(255,255,255,0.05)',
+                border: `1px solid ${musicOn ? 'rgba(139,92,246,0.45)' : 'rgba(255,255,255,0.10)'}`,
+              }}>
+              {musicOn
+                ? <Volume2 size={14} style={{ color: '#c4b5fd' }} />
+                : <VolumeX size={14} style={{ color: 'rgba(255,255,255,0.45)' }} />}
+              <span>{musicOn ? 'Music on' : 'Muted'}</span>
+              {musicOn && (
+                <span className="dev-music-eq">
+                  <i /><i /><i />
+                </span>
+              )}
+            </button>
+
+            {/* Volume control panel */}
+            {showVolPanel && (
+              <div className="dev-vol-panel" onClick={e => e.stopPropagation()}>
+                <div className="dev-vol-title">Volume</div>
+                {/* Mute toggle */}
+                <button
+                  className="dev-vol-btn"
+                  onClick={() => {
+                    const next = !musicOn
+                    setMusicOn(next)
+                    if (!next) { ambientRef.current?.stop() }
+                    else { ambientRef.current?.start(); setMusicStarted(true) }
+                  }}>
+                  {musicOn ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                  <span>{musicOn ? 'Mute' : 'Unmute'}</span>
+                </button>
+                {/* Volume up */}
+                <button
+                  className="dev-vol-btn"
+                  onClick={() => {
+                    const v = Math.min(1, volume + 0.15)
+                    setVolume(v)
+                    ambientRef.current?.setVolume(v)
+                    if (!musicOn) { setMusicOn(true); ambientRef.current?.start(); setMusicStarted(true) }
+                  }}>
+                  <Volume2 size={13} />
+                  <span>Vol +</span>
+                </button>
+                {/* Volume down */}
+                <button
+                  className="dev-vol-btn"
+                  onClick={() => {
+                    const v = Math.max(0, volume - 0.15)
+                    setVolume(v)
+                    ambientRef.current?.setVolume(v)
+                    if (v === 0) setMusicOn(false)
+                  }}>
+                  <Volume1 size={13} />
+                  <span>Vol -</span>
+                </button>
+                {/* Visual bar */}
+                <div className="dev-vol-bar-wrap">
+                  <div className="dev-vol-bar" style={{ width: `${Math.round(volume * 100)}%` }} />
+                </div>
+                <span className="dev-vol-pct">{Math.round(volume * 100)}%</span>
+              </div>
             )}
-          </button>
+          </div>
           <a href="/Pandian_Sambath_Resume.docx" download className="dev-resume-btn">
             <Download size={13} /> <span>Resume</span>
           </a>
@@ -658,6 +674,53 @@ export default function DeveloperPage() {
           transition: all 0.2s;
         }
         .dev-music-btn:hover { transform: scale(1.03); }
+
+        /* Volume panel */
+        .dev-vol-panel {
+          position: absolute; top: calc(100% + 8px); right: 0;
+          background: rgba(15,7,30,0.92);
+          border: 1px solid rgba(139,92,246,0.35);
+          border-radius: 14px;
+          padding: 10px 12px;
+          min-width: 130px;
+          backdrop-filter: blur(16px);
+          display: flex; flex-direction: column; gap: 4px;
+          z-index: 100;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+          animation: fade-down 0.15s ease;
+        }
+        @keyframes fade-down {
+          from { opacity: 0; transform: translateY(-6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .dev-vol-title {
+          font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+          color: rgba(196,181,253,0.6); text-transform: uppercase;
+          margin-bottom: 2px;
+        }
+        .dev-vol-btn {
+          display: flex; align-items: center; gap: 7px;
+          padding: 7px 10px; border-radius: 9px;
+          color: rgba(255,255,255,0.8); font-size: 12px; font-weight: 600;
+          cursor: pointer; transition: background 0.15s;
+          background: rgba(255,255,255,0.04);
+          border: 1px solid transparent;
+          width: 100%;
+        }
+        .dev-vol-btn:hover { background: rgba(139,92,246,0.2); border-color: rgba(139,92,246,0.3); }
+        .dev-vol-bar-wrap {
+          margin-top: 4px; height: 4px; border-radius: 99px;
+          background: rgba(255,255,255,0.1); overflow: hidden;
+        }
+        .dev-vol-bar {
+          height: 100%; border-radius: 99px;
+          background: linear-gradient(90deg, #8B5CF6, #EC4899);
+          transition: width 0.2s;
+        }
+        .dev-vol-pct {
+          text-align: center; font-size: 10px; color: rgba(255,255,255,0.35);
+          margin-top: 1px;
+        }
         .dev-music-eq { display: inline-flex; gap: 2px; align-items: end; height: 10px; }
         .dev-music-eq i {
           display: block; width: 2px; background: #c4b5fd;

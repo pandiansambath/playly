@@ -31,11 +31,16 @@ export default function LibraryPage() {
 
     fetchLibrary() // Initial fetch
 
-    // Re-fetch whenever the tab becomes visible again (handles back-navigation
-    // where Next.js may restore this component from cache without remounting)
+    // Re-fetch on tab visibility change OR window focus — covers Next.js Router
+    // Cache restoring this component without remounting (back-navigation, etc.)
     const onVisible = () => { if (document.visibilityState === 'visible') fetchLibrary() }
+    const onFocus = () => fetchLibrary()
     document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [])
 
   async function toggleFav(songId: string) {

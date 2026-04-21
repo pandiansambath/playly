@@ -5,6 +5,7 @@ import {
   Clock, Play, BookOpen, LayoutGrid, Heart,
 } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { api, invalidateCache } from '@/lib/api'
 import { SearchResult, YTResult } from '@/components/SearchResult'
 import { useAuth } from '@/components/AuthProvider'
@@ -212,22 +213,12 @@ function LandingPage() {
       <div className="landing-left">
 
         {/* Logo + mobile music disc (clickable → /developer) */}
-        <div className="mb-5 fade-in flex items-center justify-between gap-3">
+        <div className="mb-5 fade-in landing-logo-row">
           <PlayLyLogo size="xl" />
           <Link href="/developer" aria-label="Meet the developer"
             className="landing-mobile-disc" title="Meet the developer ✦">
-            {/* Mini orbit ring (mobile WOW) */}
-            <div className="landing-mobile-orbit pointer-events-none">
-              {Array.from({ length: 20 }).map((_, i) => (
-                <span key={i} className="orbit-eq-bar"
-                  style={{
-                    transform: `rotate(${(i / 20) * 360}deg) translateY(-44px)`,
-                    animationDelay: `${(i * 0.06) % 1.2}s`,
-                  }} />
-              ))}
-            </div>
             <div className="landing-mobile-disc-inner">
-              <Music size={28} style={{ color: 'rgba(196,181,253,0.95)' }} />
+              <Music size={26} style={{ color: 'rgba(196,181,253,0.95)' }} />
             </div>
             <span className="landing-mobile-disc-dot" />
           </Link>
@@ -524,6 +515,7 @@ function SearchPage() {
   const [error, setError] = useState('')
   const setCurrentSong = usePlayerStore(s => s.setCurrentSong)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const router = useRouter()
 
   // Pre-load library on mount so already-downloaded songs show Play instead of Download
   useEffect(() => {
@@ -569,6 +561,8 @@ function SearchPage() {
       }
       setDone(d => new Set([...d, r.youtube_id]))
       showToast('Added to library ✓')
+      // Bust Next.js Router Cache so library page re-fetches fresh on next visit
+      router.refresh()
     } catch (e: any) {
       const raw: string = e?.message || ''
       const friendly = raw.includes('cookie') || raw.includes('sign in') || raw.includes('bot') || raw.includes('authentication')

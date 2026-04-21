@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Play, Pause, SkipBack, SkipForward,
   Volume2, VolumeX, ChevronDown, Repeat, Repeat1, Shuffle,
-  MonitorPlay, Sparkles, Download, Loader2, Check, X,
+  MonitorPlay, Sparkles, Download, Loader2, Check, X, Maximize2,
 } from 'lucide-react'
 import { usePlayerStore, getAudio } from '@/store/playerStore'
 import { formatDuration, supabase } from '@/lib/supabase'
@@ -219,17 +219,16 @@ function MagicCanvas({ accentColor, onBeat }: {
         beatCount.current++
         const beatStrength = Math.min(1.4, Math.max(0.5, strength - 1))
 
-        // Missile barrage — only on genuinely loud beats (so it stays special),
-        // and never more often than every 1.6s, with at least 4 ordinary beats
-        // in between, so it punctuates instead of drowning out the rhythm.
+        // Missile barrage — fires on any decent beat, ~every 0.7s minimum.
+        // beatStrength > 0.7 means the beat is at least 70% of avg energy (most beats).
         const isMissileHit =
-          beatStrength > 1.05 &&
-          now - lastMissile.current > 1600 &&
-          beatCount.current - missileSeen.current >= 4
+          beatStrength > 0.7 &&
+          now - lastMissile.current > 700 &&
+          beatCount.current - missileSeen.current >= 2
         if (isMissileHit) {
           lastMissile.current = now
           missileSeen.current = beatCount.current
-          fireMissiles(Math.round(10 + beatStrength * 6), beatStrength)
+          fireMissiles(Math.round(12 + beatStrength * 8), beatStrength)
           // Bright leading shockwave that races out with the missiles
           ripples.current.push({
             r: 0, maxR: maxD * 1.12, alpha: 0.45,
@@ -729,6 +728,7 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
 
   // ── Refs ─────────────────────────────────────────────
   const iframeRef           = useRef<HTMLIFrameElement>(null)
+  const videoContainerRef   = useRef<HTMLDivElement>(null)
   const prevShowVideo       = useRef(false)   // ← FIX 4a: guard mount effect
   const videoStartAudioTime = useRef(0)
   const videoStartWall      = useRef(0)
@@ -1018,8 +1018,8 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
               }}>
 
               {showVideo ? (
-                // FIX 11: Show album art behind iframe while loading, then crossfade
-                <div className="relative w-full h-full">
+                // Show album art behind iframe while loading, then crossfade
+                <div ref={videoContainerRef} className="relative w-full h-full">
                   {/* Album art loading overlay */}
                   {!isVideoLoaded && (
                     <div className="absolute inset-0 z-10 flex flex-col items-center justify-center"
@@ -1046,6 +1046,24 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
                     }}
                     onLoad={onIframeLoad}
                   />
+                  {/* Fullscreen button — bottom-right corner of video */}
+                  <button
+                    onClick={() => videoContainerRef.current?.requestFullscreen?.()}
+                    title="Fullscreen"
+                    style={{
+                      position: 'absolute', bottom: 10, right: 10, zIndex: 20,
+                      background: 'rgba(0,0,0,0.55)', border: '1px solid rgba(255,255,255,0.18)',
+                      borderRadius: 8, padding: '6px 8px', cursor: 'pointer',
+                      color: 'white', backdropFilter: 'blur(6px)',
+                      opacity: isVideoLoaded ? 0.7 : 0,
+                      transition: 'opacity 0.3s',
+                      display: 'flex', alignItems: 'center',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                    onMouseLeave={e => (e.currentTarget.style.opacity = '0.7')}
+                  >
+                    <Maximize2 size={14} />
+                  </button>
                 </div>
               ) : (
                 // Album art (audio mode) — contain so YT 16:9 thumbs are never cropped
