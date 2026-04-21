@@ -496,7 +496,7 @@ export default function DeveloperPage() {
               </a>
             </div>
             <div className="dev-hero-metrics">
-              <div><b>17th</b><span>Anna University · <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" style={{display:'inline-block',verticalAlign:'middle',marginBottom:'1px'}}><circle cx="12" cy="9" r="7" fill="url(#gm_gold)" stroke="#B8860B" strokeWidth="1"/><path d="M8 16l1.5 5h5L16 16" fill="url(#gm_ribbon)" stroke="#c0392b" strokeWidth="0.5"/><defs><radialGradient id="gm_gold" cx="40%" cy="35%" r="60%"><stop offset="0%" stopColor="#FFF176"/><stop offset="50%" stopColor="#FFD700"/><stop offset="100%" stopColor="#B8860B"/></radialGradient><linearGradient id="gm_ribbon" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#e74c3c"/><stop offset="100%" stopColor="#922b21"/></linearGradient></defs></svg></span></div>
+              <div><b>17th</b><span>Anna University<br/><small style={{fontSize:'0.75em',opacity:0.85}}>🥇 Gold Medal</small></span></div>
               <div><b>TCS</b><span>Digital · Innovator</span></div>
               <div><b>2024 →</b><span>Systems Engineer</span></div>
             </div>
@@ -585,7 +585,7 @@ export default function DeveloperPage() {
                 className="dev-tile"
                 onClick={() => setLightbox(i)}
                 style={{ animationDelay: `${Math.min(i, 24) * 0.04}s` }}>
-                <img src={p.src} alt="" loading="lazy" className="dev-tile-img" />
+                <img src={p.src} alt="" loading={i < 12 ? 'eager' : 'lazy'} fetchPriority={i < 6 ? 'high' : 'auto'} className="dev-tile-img" />
                 <div className="dev-tile-overlay" />
                 <div className="dev-tile-meta">
                   <span className="dev-tile-mood" style={{
