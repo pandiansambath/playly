@@ -137,18 +137,22 @@ const TECH = [
 // LFO swells + a soft pentatonic arpeggio loop. Volume 0.32.
 // ══════════════════════════════════════════════════════════════
 function createAmbient() {
-  let audio: HTMLAudioElement | null = null
+  // Create + preload immediately so the file is buffered in RAM.
+  // By the time the user first taps, it's already downloaded — instant play.
+  const audio = typeof window !== 'undefined' ? (() => {
+    const a = new Audio('/page_song.mp3')
+    a.loop = true
+    a.volume = 0
+    a.preload = 'auto'   // tell browser: download the whole file now
+    return a
+  })() : null
   let running = false
   let _volume = 0.45
 
   function start() {
-    if (running) return
+    if (running || !audio) return
     try {
-      if (!audio) {
-        audio = new Audio('/page_song.mp3')
-        audio.loop = true
-        audio.volume = 0  // start silent, fade in
-      }
+      audio.volume = 0
       audio.play().then(() => {
         // Fade in over 1.5s so it doesn't slam
         if (!audio) return
