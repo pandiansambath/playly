@@ -23,14 +23,10 @@ spec:
       name: letsencrypt-prod-account-key
     solvers:
     # HTTP-01 challenge: LE visits http://playly.online/.well-known/acme-challenge/...
-    # cert-manager automatically handles this via your nginx ingress
-    # IMPORTANT: ingressTemplate adds ssl-redirect=false so nginx doesn't redirect
-    # the challenge to HTTPS before the cert exists (chicken-and-egg fix)
+    # We point cert-manager at the dedicated playly-acme-solver ingress (no rewrite-target)
+    # so challenge paths are NOT rewritten. The main playly-ingress has rewrite-target:/$2
+    # which strips the token path and returns empty body — breaking the challenge.
     - http01:
         ingress:
           ingressClassName: nginx
-          ingressTemplate:
-            metadata:
-              annotations:
-                nginx.ingress.kubernetes.io/ssl-redirect: "false"
-                nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+          name: playly-acme-solver

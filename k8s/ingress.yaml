@@ -72,18 +72,22 @@ spec:
             port:
               number: 80
 ---
-# Separate ingress for ACME challenge — NO rewrite-target
-# cert-manager's http01-edit-in-place doesn't work with rewrite-target
-# because the challenge path gets rewritten. This ingress handles the
-# /.well-known/ path WITHOUT rewriting, so the solver pod gets the correct request.
+# Separate ingress for ACME challenge — NO rewrite-target.
+# cert-manager edits THIS ingress (not playly-ingress) to inject the token path.
+# Root cause of old failure: playly-ingress has rewrite-target:/$2 which rewrites
+# the /.well-known/acme-challenge/<token> path to "/" (empty capture group),
+# so the solver pod returns an empty 200 instead of the token — LE rejects it.
+# Fix: ClusterIssuer points cert-manager at this ingress (name: playly-acme-solver)
+# which has NO rewrite-target, so the token path passes through intact.
+# NOTE: cert-manager.io/cluster-issuer annotation removed — the Certificate is now
+# managed as a standalone resource (k8s/certificate.yaml), not via ingress-shim,
+# so ingress-shim can no longer override the solver ingress with playly-ingress.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: playly-acme-solver
   namespace: playly
   annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    acme.cert-manager.io/http01-edit-in-place: "true"
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   ingressClassName: nginx

@@ -175,17 +175,62 @@ function LandingPage() {
       <div className="aurora-blob" style={{ width: 420, height: 420, top: '40%', right: '-8%', background: 'rgba(236,72,153,0.18)', animationDelay: '2s' }} />
       <div className="aurora-blob" style={{ width: 360, height: 360, bottom: '-5%', left: '25%', background: 'rgba(99,102,241,0.15)', animationDelay: '4s' }} />
 
+      {/* ─── MOBILE-ONLY WOW LAYER: floating notes + waveform at bottom ─── */}
+      <div className="landing-mobile-wow pointer-events-none" aria-hidden="true">
+        {[...Array(8)].map((_, i) => (
+          <div key={i}
+            className="music-note absolute select-none"
+            style={{
+              bottom: `${8 + (i % 4) * 18}%`,
+              left: `${(i * 13 + 4) % 92}%`,
+              animationDuration: `${3.2 + (i * 0.35) % 2.4}s`,
+              animationDelay: `${i * 0.55}s`,
+              fontSize: 14 + (i % 3) * 4,
+              color: i % 2 === 0 ? 'rgba(139,92,246,0.75)' : 'rgba(236,72,153,0.7)',
+              textShadow: '0 0 12px currentColor',
+            }}>
+            {i % 3 === 0 ? '♪' : i % 3 === 1 ? '♫' : '♬'}
+          </div>
+        ))}
+        {/* Bottom waveform strip */}
+        <div className="landing-mobile-waveform">
+          {[...Array(22)].map((_, i) => (
+            <div key={i} className="eq-bar" style={{
+              width: 3,
+              height: Math.round(6 + Math.sin(i * 0.9) * 14),
+              borderRadius: 3,
+              background: `linear-gradient(to top, var(--accent), var(--accent-alt))`,
+              transformOrigin: 'bottom',
+              animationDuration: `${0.5 + (i * 0.05) % 0.6}s`,
+              animationDelay: `${i * 0.04}s`,
+            }} />
+          ))}
+        </div>
+      </div>
+
       {/* ─── LEFT PANEL ─── */}
       <div className="landing-left">
 
-        {/* Logo + mobile music disc */}
+        {/* Logo + mobile music disc (clickable → /developer) */}
         <div className="mb-5 fade-in flex items-center justify-between gap-3">
           <PlayLyLogo size="xl" />
-          <div className="landing-mobile-disc">
-            <div className="landing-mobile-disc-inner">
-              <Music size={28} style={{ color: 'rgba(196,181,253,0.9)' }} />
+          <Link href="/developer" aria-label="Meet the developer"
+            className="landing-mobile-disc" title="Meet the developer ✦">
+            {/* Mini orbit ring (mobile WOW) */}
+            <div className="landing-mobile-orbit pointer-events-none">
+              {Array.from({ length: 20 }).map((_, i) => (
+                <span key={i} className="orbit-eq-bar"
+                  style={{
+                    transform: `rotate(${(i / 20) * 360}deg) translateY(-44px)`,
+                    animationDelay: `${(i * 0.06) % 1.2}s`,
+                  }} />
+              ))}
             </div>
-          </div>
+            <div className="landing-mobile-disc-inner">
+              <Music size={28} style={{ color: 'rgba(196,181,253,0.95)' }} />
+            </div>
+            <span className="landing-mobile-disc-dot" />
+          </Link>
         </div>
 
         {/* Hero */}
@@ -356,40 +401,47 @@ function LandingPage() {
           ))}
         </div>
 
-        {/* Big glowing disc */}
-        <div ref={discRef} className="landing-disc-tilt relative flex items-center justify-center" style={{
-          width: 260, height: 260,
-          borderRadius: '50%',
-          background: `radial-gradient(circle, rgba(139,92,246,0.18) 0%, transparent 70%)`,
-          transition: 'transform 0.18s ease-out',
-          willChange: 'transform',
-        }}>
-          {/* Outer ring */}
-          <div style={{
-            position: 'absolute', inset: -2,
+        {/* Big glowing disc — clickable → /developer */}
+        <Link href="/developer" aria-label="Meet the developer"
+          title="Meet the developer ✦"
+          className="landing-disc-link"
+          style={{ textDecoration: 'none' }}>
+          <div ref={discRef} className="landing-disc-tilt landing-disc-clickable relative flex items-center justify-center" style={{
+            width: 260, height: 260,
             borderRadius: '50%',
-            background: 'linear-gradient(135deg, rgba(139,92,246,0.45), rgba(236,72,153,0.35), transparent)',
-            animation: 'spin-disc 18s linear infinite',
-          }} />
-          {/* Album art mock */}
-          <div style={{
-            width: 200, height: 200, borderRadius: '50%',
-            background: 'linear-gradient(135deg, #1a0a3a, #0f0715)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 20px 80px rgba(139,92,246,0.35)',
-            border: '1px solid rgba(139,92,246,0.2)',
-            position: 'relative',
+            background: `radial-gradient(circle, rgba(139,92,246,0.18) 0%, transparent 70%)`,
+            transition: 'transform 0.18s ease-out',
+            willChange: 'transform',
           }}>
-            <Music size={64} style={{ color: 'rgba(139,92,246,0.5)' }} />
-            {/* Center dot */}
+            {/* Outer ring */}
             <div style={{
-              position: 'absolute', width: 16, height: 16, borderRadius: '50%',
-              background: 'var(--accent)', top: '50%', left: '50%',
-              transform: 'translate(-50%,-50%)',
-              boxShadow: '0 0 12px rgba(139,92,246,0.8)',
+              position: 'absolute', inset: -2,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, rgba(139,92,246,0.45), rgba(236,72,153,0.35), transparent)',
+              animation: 'spin-disc 18s linear infinite',
             }} />
+            {/* Album art mock */}
+            <div style={{
+              width: 200, height: 200, borderRadius: '50%',
+              background: 'linear-gradient(135deg, #1a0a3a, #0f0715)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 20px 80px rgba(139,92,246,0.35)',
+              border: '1px solid rgba(139,92,246,0.2)',
+              position: 'relative',
+            }}>
+              <Music size={64} style={{ color: 'rgba(139,92,246,0.5)' }} />
+              {/* Center dot */}
+              <div style={{
+                position: 'absolute', width: 16, height: 16, borderRadius: '50%',
+                background: 'var(--accent)', top: '50%', left: '50%',
+                transform: 'translate(-50%,-50%)',
+                boxShadow: '0 0 12px rgba(139,92,246,0.8)',
+              }} />
+            </div>
+            {/* "Meet the dev" hint — appears on hover */}
+            <span className="landing-disc-hint">Meet the developer ✦</span>
           </div>
-        </div>
+        </Link>
 
         {/* Floating notes */}
         {[...Array(6)].map((_, i) => (
@@ -424,36 +476,6 @@ function LandingPage() {
         </div>
       </div>
 
-      {/* Developer page — subtle but findable avatar badge bottom-right */}
-      <Link href="/developer"
-        style={{
-          position: 'absolute', bottom: 18, right: 18,
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '6px 10px 6px 6px',
-          borderRadius: 99,
-          background: 'rgba(139,92,246,0.10)',
-          border: '1px solid rgba(139,92,246,0.25)',
-          backdropFilter: 'blur(10px)',
-          textDecoration: 'none',
-          opacity: 0.7,
-          transition: 'opacity 0.25s, transform 0.25s',
-          cursor: 'pointer',
-          zIndex: 20,
-        }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; (e.currentTarget as HTMLElement).style.transform = 'scale(1.05)' }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '0.7'; (e.currentTarget as HTMLElement).style.transform = 'scale(1)' }}>
-        <div style={{
-          width: 26, height: 26, borderRadius: '50%',
-          background: 'linear-gradient(135deg,#8B5CF6,#EC4899)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 11, fontWeight: 900, color: 'white',
-          boxShadow: '0 0 10px rgba(139,92,246,0.5)',
-          flexShrink: 0,
-        }}>PS</div>
-        <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap' }}>
-          built by me ✦
-        </span>
-      </Link>
     </div>
   )
 }
