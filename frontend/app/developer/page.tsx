@@ -55,31 +55,45 @@ function cdnKey(file: string): string {
 
 const PHOTO_FILES = [
   '1734150453655.jpeg', '20251225_204404.jpg',
-  'IMG20260211112715.jpg', 'IMG20260404192937.jpg', 'IMG20260404194231.jpg', 'IMG20260404194921.jpg',
+  'IMG20260211112715.jpg', 'IMG20260219175738.jpg',
+  'IMG20260404192937.jpg', 'IMG20260404194231.jpg', 'IMG20260404194921.jpg',
+  'IMG20260407140332.jpg', 'IMG20260407140738.jpg',
+  'IMG_20240808_124043.jpg', 'IMG_20240808_124108.jpg', 'IMG_20240808_165021.jpg',
+  'IMG_20240813_185103.jpg', 'IMG_20240819_180812.jpg',
+  'IMG_20240820_175624.jpg', 'IMG_20240820_175639.jpg',
+  'IMG_20240911_161204.jpg', 'IMG_20240927_164821.jpg',
+  'IMG_20241102_084941.jpg', 'IMG_20241115_170000.jpg',
+  'IMG_20250414_122037.jpg',
+  'IMG_20250416_124445.jpg', 'IMG_20250416_124502.jpg', 'IMG_20250416_124513.jpg',
+  'IMG_20250416_124515.jpg', 'IMG_20250416_124517.jpg', 'IMG_20250416_124537.jpg',
+  'IMG_20250418_175647.jpg', 'IMG_20250419_181821~2.jpg', 'IMG_20250427_174630~2.jpg',
+  'IMG_20250502_065936.jpg',
   'IMG_20250614_182531.jpg', 'IMG_20250615_064446.jpg', 'IMG_20250615_065557.jpg', 'IMG_20250615_065611.jpg',
   'IMG_20250615_065912.jpg', 'IMG_20250622_181149.jpg', 'IMG_20250623_181705.jpg', 'IMG_20250623_181918.jpg',
   'IMG_20250627_131958.jpg', 'IMG_20250627_150408.jpg', 'IMG_20250628_075710.jpg', 'IMG_20250629_091053.jpg',
-  'IMG_20250703_142128.jpg', 'IMG_20250704_180334.jpg', 'IMG_20250706_170941.jpg', 'IMG_20250713_174417.jpg',
+  'IMG_20250629_092729.jpg',
+  'IMG_20250703_142128.jpg', 'IMG_20250704_180334.jpg',
+  'IMG_20250705_114006.jpg', 'IMG_20250706_170941.jpg', 'IMG_20250707_163625_1.jpg',
+  'IMG_20250713_174417.jpg',
   'IMG_20250810_175040.jpg', 'IMG_20250811_171252.jpg', 'IMG_20250814_135100.jpg', 'IMG_20250814_143957.jpg',
-  'IMG_20250927_061610.jpg', 'IMG_20251016_111256.jpg', 'IMG_20251016_114757.jpg', 'IMG_20251017_174155.jpg',
+  'IMG_20250927_061610.jpg',
+  'IMG_20251015_134137.jpg', 'IMG_20251015_150959.jpg',
+  'IMG_20251016_111256.jpg', 'IMG_20251016_114757.jpg', 'IMG_20251017_174155.jpg',
   'IMG_20251027_114914~2.jpg', 'IMG_20251105_175206.jpg', 'IMG_20251112_170717.jpg', 'IMG_20251204_152630.jpg',
-  'IMG_20251222_134912.jpg', 'IMG_20251222_134937.jpg', 'IMG_20251222_135309.jpg', 'IMG_20251231_123325.jpg',
+  'IMG_20251216_142948~2.jpg',
+  'IMG_20251222_134912.jpg', 'IMG_20251222_134937.jpg', 'IMG_20251222_135309.jpg',
+  'IMG_20251225_124733.jpg', 'IMG_20251231_123325.jpg',
   'IMG_20260104_155646~3.jpg', 'IMG_20260105_172508.jpg', 'IMG_20260118_130053~2.jpg', 'IMG_20260122_182600.jpg',
   'IMG_20260129_220319.jpg', 'IMG_20260416_162050_726.jpg', 'photo_2026-04-16_16-24-53.jpg',
 ]
 
-interface Photo { src: string; full: string; mood: Mood; date: string }
+interface Photo { src: string; full: string; mood: Mood }
 
-const PHOTOS: Photo[] = PHOTO_FILES.map(f => {
-  const match = f.match(/(\d{4})(\d{2})(\d{2})/)
-  const date = match ? `${match[3]}/${match[2]}/${match[1].slice(2)}` : ''
-  return {
-    src:  `/me/${f}`,
-    full: `${PHOTO_CDN}/${cdnKey(f)}`,
-    mood: moodFromFilename(f),
-    date,
-  }
-})
+const PHOTOS: Photo[] = PHOTO_FILES.map(f => ({
+  src:  `/me/${f}`,
+  full: `${PHOTO_CDN}/${cdnKey(f)}`,
+  mood: moodFromFilename(f),
+}))
 
 const PROFILE_PIC = '/me/profile_pic.jpeg'
 
@@ -117,81 +131,103 @@ const TECH = [
 ]
 
 // ══════════════════════════════════════════════════════════════
-// PROCEDURAL AMBIENT MUSIC — Web Audio, no external file
-// Three soft detuned sine-waves with slow filter sweep = calm pad
+// PROCEDURAL AMBIENT MUSIC — feel-good C-major pad + arpeggio
+// Layered sine/triangle pads in C major 7 (C-E-G-B) with slow
+// LFO swells + a soft pentatonic arpeggio loop. Volume 0.32.
 // ══════════════════════════════════════════════════════════════
 function createAmbient() {
   let ctx: AudioContext | null = null
   let master: GainNode | null = null
-  let filter: BiquadFilterNode | null = null
   let oscs: OscillatorNode[] = []
   let lfos: OscillatorNode[] = []
+  let arpTimer = 0
   let running = false
 
   function start() {
     if (running) return
     try {
       ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+
+      // Reverb-like convolver via 2s stereo noise impulse
+      const convolver = ctx.createConvolver()
+      const irLen = ctx.sampleRate * 2.2
+      const ir = ctx.createBuffer(2, irLen, ctx.sampleRate)
+      for (let ch = 0; ch < 2; ch++) {
+        const data = ir.getChannelData(ch)
+        for (let i = 0; i < irLen; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / irLen, 2.4)
+      }
+      convolver.buffer = ir
+
+      // Reverb send mix
+      const dry  = ctx.createGain(); dry.gain.value  = 0.68
+      const wet  = ctx.createGain(); wet.gain.value  = 0.42
       master = ctx.createGain()
       master.gain.setValueAtTime(0, ctx.currentTime)
-      master.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 1.2)
-      filter = ctx.createBiquadFilter()
-      filter.type = 'lowpass'
-      filter.frequency.value = 700
-      filter.Q.value = 0.8
-      master.connect(filter)
-      filter.connect(ctx.destination)
+      master.gain.linearRampToValueAtTime(0.32, ctx.currentTime + 1.8)
+      dry.connect(master)
+      wet.connect(master)
+      master.connect(ctx.destination)
+      convolver.connect(wet)
 
-      // Chord: A minor 9 feel — gentle major-7/minor blend
-      const freqs = [110, 164.81, 220, 277.18, 329.63, 440]
-      freqs.forEach((f, i) => {
-        const o = ctx!.createOscillator()
-        o.type = i % 2 === 0 ? 'sine' : 'triangle'
+      // ── PAD: C major 7 chord — C2, E3, G3, B3, C4, E4, G4 ──
+      const padFreqs = [65.41, 164.81, 196.00, 246.94, 261.63, 329.63, 392.00]
+      padFreqs.forEach((f, i) => {
+        const o   = ctx!.createOscillator()
+        o.type    = i % 3 === 0 ? 'sine' : i % 3 === 1 ? 'triangle' : 'sawtooth'
         o.frequency.value = f
+        o.detune.value = (i % 2 === 0 ? 1 : -1) * (3 + i)  // subtle chorus
+
         const g = ctx!.createGain()
-        g.gain.value = 0.14 / (i + 1)
+        g.gain.value = (0.22 - i * 0.018) / (i < 2 ? 1.8 : 1)
 
-        // Slow LFO for gentle swell
+        // Slow LFO swell per voice
         const lfo = ctx!.createOscillator()
-        lfo.frequency.value = 0.04 + i * 0.013
-        const lfoGain = ctx!.createGain()
-        lfoGain.gain.value = 0.06
-        lfo.connect(lfoGain)
-        lfoGain.connect(g.gain)
+        lfo.frequency.value = 0.03 + i * 0.009
+        const lg = ctx!.createGain(); lg.gain.value = 0.07
+        lfo.connect(lg); lg.connect(g.gain)
 
-        o.connect(g); g.connect(master!)
+        o.connect(g); g.connect(dry); g.connect(convolver)
         o.start(); lfo.start()
         oscs.push(o); lfos.push(lfo)
       })
 
-      // Slow filter sweep for breathing quality
-      const filterLfo = ctx.createOscillator()
-      filterLfo.frequency.value = 0.05
-      const filterGain = ctx.createGain()
-      filterGain.gain.value = 280
-      filterLfo.connect(filterGain)
-      filterGain.connect(filter.frequency)
-      filterLfo.start()
-      lfos.push(filterLfo)
+      // ── ARPEGGIO: soft C pentatonic sparkle ──
+      // C4 E4 G4 A4 C5 E5 — looping at ~3 BPM sixteenth-note feel
+      const arpNotes = [261.63, 329.63, 392.00, 440.00, 523.25, 659.25, 523.25, 440.00]
+      let arpIdx = 0
+      function playArp() {
+        if (!ctx || !running) return
+        const freq = arpNotes[arpIdx % arpNotes.length]
+        arpIdx++
+        const o = ctx.createOscillator()
+        o.type = 'sine'; o.frequency.value = freq
+        const g = ctx.createGain()
+        const t = ctx.currentTime
+        g.gain.setValueAtTime(0, t)
+        g.gain.linearRampToValueAtTime(0.055, t + 0.04)
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.65)
+        o.connect(g); g.connect(dry); g.connect(convolver)
+        o.start(t); o.stop(t + 0.7)
+        arpTimer = window.setTimeout(playArp, 360 + Math.random() * 120) as any
+      }
+      setTimeout(playArp, 1800)
+
       running = true
     } catch { }
   }
 
   function stop() {
+    clearTimeout(arpTimer)
     if (!running || !ctx || !master) return
     const t = ctx.currentTime
     master.gain.cancelScheduledValues(t)
     master.gain.setValueAtTime(master.gain.value, t)
-    master.gain.linearRampToValueAtTime(0, t + 0.6)
+    master.gain.linearRampToValueAtTime(0, t + 0.8)
     setTimeout(() => {
-      try {
-        oscs.forEach(o => o.stop())
-        lfos.forEach(l => l.stop())
-        ctx?.close()
-      } catch { }
-      oscs = []; lfos = []; ctx = null; master = null; filter = null
+      try { oscs.forEach(o => o.stop()); lfos.forEach(l => l.stop()); ctx?.close() } catch { }
+      oscs = []; lfos = []; ctx = null; master = null
       running = false
-    }, 700)
+    }, 900)
   }
 
   return { start, stop, isRunning: () => running }
@@ -274,7 +310,7 @@ function Lightbox({ photos, index, onClose, onNav }: {
             {mood.emoji} {mood.label}
           </span>
           <span className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
-            {p.date || `${index + 1} / ${photos.length}`}
+            {index + 1} / {photos.length}
           </span>
         </div>
       </div>
@@ -337,6 +373,17 @@ export default function DeveloperPage() {
   const navLightbox = (dir: 1 | -1) =>
     setLightbox(prev => prev === null ? 0 : (prev + dir + filtered.length) % filtered.length)
 
+  // Scroll-reveal: add is-visible once each section enters viewport
+  useEffect(() => {
+    const els = document.querySelectorAll<HTMLElement>('.reveal')
+    if (!els.length) return
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => { if (e.isIntersecting) { (e.target as HTMLElement).classList.add('is-visible'); io.unobserve(e.target) } })
+    }, { threshold: 0.12 })
+    els.forEach(el => io.observe(el))
+    return () => io.disconnect()
+  }, [])
+
   return (
     <div className="dev-root">
       {/* ── Ambient background ─────────────────────────── */}
@@ -387,7 +434,7 @@ export default function DeveloperPage() {
       </div>
 
       {/* ── HERO ────────────────────────────────────────── */}
-      <section className="dev-hero">
+      <section className="dev-hero reveal">
         <div className="dev-hero-inner">
           <div className="dev-hero-avatar-wrap" onClick={() => setLightbox(PHOTOS.findIndex(p => p.mood === 'essence'))}>
             <div className="dev-hero-avatar-glow" />
@@ -424,7 +471,7 @@ export default function DeveloperPage() {
       </section>
 
       {/* ── JOURNEY + TECH ───────────────────────────────── */}
-      <section className="dev-panels">
+      <section className="dev-panels reveal">
         <div className="dev-panel">
           <p className="dev-panel-eyebrow">Journey</p>
           <div className="dev-timeline">
@@ -460,7 +507,7 @@ export default function DeveloperPage() {
       </section>
 
       {/* ── GALLERY ─────────────────────────────────────── */}
-      <section className="dev-gallery-section">
+      <section className="dev-gallery-section reveal">
         <div className="dev-gallery-header">
           <div>
             <p className="dev-panel-eyebrow">The human file</p>
@@ -512,7 +559,6 @@ export default function DeveloperPage() {
                     border: `1px solid rgba(${m.accent},0.4)`,
                     color: `rgb(${m.accent})`,
                   }}>{m.emoji} {m.label}</span>
-                  {p.date && <span className="dev-tile-date">{p.date}</span>}
                 </div>
               </div>
             )
@@ -647,14 +693,19 @@ export default function DeveloperPage() {
           width: 168px; height: 168px; border-radius: 50%;
           cursor: pointer;
           transition: transform 0.4s cubic-bezier(0.16,1,0.3,1);
+          animation: avatar-float 6s ease-in-out infinite;
         }
-        .dev-hero-avatar-wrap:hover { transform: scale(1.04) rotate(-1.5deg); }
+        @keyframes avatar-float {
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          50%       { transform: translateY(-10px) rotate(1.5deg); }
+        }
+        .dev-hero-avatar-wrap:hover { animation-play-state: paused; transform: scale(1.06) rotate(-2deg); }
         .dev-hero-avatar-glow {
           position: absolute; inset: -8px; border-radius: 50%;
           background: conic-gradient(from 0deg, #8B5CF6, #EC4899, #F97316, #06B6D4, #8B5CF6);
           filter: blur(18px);
-          opacity: 0.55;
-          animation: spin-disc 14s linear infinite;
+          opacity: 0.65;
+          animation: spin-disc 10s linear infinite;
         }
         .dev-hero-avatar {
           position: relative; z-index: 2;
@@ -662,6 +713,18 @@ export default function DeveloperPage() {
           object-fit: cover; object-position: center 28%;
           border: 3px solid rgba(255,255,255,0.08);
           box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+          transition: box-shadow 0.3s;
+        }
+        .dev-hero-avatar-wrap:hover .dev-hero-avatar {
+          box-shadow: 0 24px 80px rgba(139,92,246,0.6);
+        }
+        /* Outer orbit ring */
+        .dev-hero-avatar-wrap::after {
+          content: '';
+          position: absolute; inset: -18px; border-radius: 50%;
+          border: 1.5px dashed rgba(139,92,246,0.3);
+          animation: spin-disc 22s linear infinite reverse;
+          pointer-events: none;
         }
         .dev-hero-text { flex: 1; min-width: 0; }
         .dev-hero-eyebrow {
@@ -680,6 +743,11 @@ export default function DeveloperPage() {
           font-weight: 900; line-height: 1.02;
           letter-spacing: -0.04em;
           margin-bottom: 10px;
+          animation: fade-in 0.8s 0.2s both;
+        }
+        @keyframes name-shimmer {
+          0%   { background-position: -200% center; }
+          100% { background-position:  200% center; }
         }
         .dev-hero-firstname {
           background: linear-gradient(120deg, #a78bfa 0%, #ec4899 55%, #f97316 100%);
@@ -859,14 +927,30 @@ export default function DeveloperPage() {
           box-shadow: 0 4px 22px rgba(139,92,246,0.3);
         }
 
+        /* ── Scroll-reveal ── */
+        .reveal {
+          opacity: 0;
+          transform: translateY(36px);
+          transition: opacity 0.75s cubic-bezier(0.16,1,0.3,1),
+                      transform 0.75s cubic-bezier(0.16,1,0.3,1);
+        }
+        .reveal.is-visible { opacity: 1; transform: translateY(0); }
+
         /* Masonry (CSS columns) */
         .dev-masonry {
           column-count: 4; column-gap: 12px;
           padding-bottom: 40px;
+          perspective: 1400px;
         }
         @media (max-width: 980px) { .dev-masonry { column-count: 3; } }
         @media (max-width: 680px) { .dev-masonry { column-count: 2; } }
         @media (max-width: 420px) { .dev-masonry { column-count: 2; column-gap: 8px; } }
+
+        @keyframes tile-flip-in {
+          0%   { opacity: 0; transform: perspective(700px) rotateX(22deg) translateY(28px) scale(0.94); }
+          100% { opacity: 1; transform: perspective(700px) rotateX(0)     translateY(0)    scale(1);    }
+        }
+
         .dev-tile {
           break-inside: avoid;
           position: relative;
@@ -875,38 +959,83 @@ export default function DeveloperPage() {
           overflow: hidden;
           cursor: pointer;
           box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-          transition: transform 0.35s cubic-bezier(0.16,1,0.3,1),
-                      box-shadow 0.35s ease;
-          animation: expand-in 0.55s cubic-bezier(0.16,1,0.3,1) both;
+          transition: transform 0.38s cubic-bezier(0.16,1,0.3,1),
+                      box-shadow 0.38s ease,
+                      border-color 0.3s ease;
+          animation: tile-flip-in 0.6s cubic-bezier(0.16,1,0.3,1) both;
           border: 1px solid rgba(255,255,255,0.05);
         }
         .dev-tile:hover {
-          transform: translateY(-4px) scale(1.015);
-          box-shadow: 0 24px 56px rgba(0,0,0,0.65), 0 0 0 1px rgba(139,92,246,0.35);
+          transform: translateY(-6px) scale(1.02) rotate(-0.4deg);
+          box-shadow:
+            0 28px 64px rgba(0,0,0,0.7),
+            0 0 0 1.5px rgba(139,92,246,0.5),
+            0 0 32px rgba(139,92,246,0.25);
           z-index: 2;
+          border-color: rgba(139,92,246,0.4);
         }
+
+        /* Rotating border glow on hover */
+        .dev-tile::before {
+          content: '';
+          position: absolute; inset: 0; z-index: 3;
+          border-radius: 16px;
+          padding: 1.5px;
+          background: conic-gradient(from var(--angle, 0deg),
+            rgba(139,92,246,0.9), rgba(236,72,153,0.8),
+            rgba(249,115,22,0.7), rgba(6,182,212,0.8),
+            rgba(139,92,246,0.9));
+          -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+          -webkit-mask-composite: xor; mask-composite: exclude;
+          opacity: 0;
+          transition: opacity 0.3s;
+          pointer-events: none;
+          animation: border-angle 4s linear infinite;
+        }
+        .dev-tile:hover::before { opacity: 1; }
+        @property --angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+        @keyframes border-angle { to { --angle: 360deg; } }
+
+        /* Shimmer sweep on hover */
+        .dev-tile::after {
+          content: '';
+          position: absolute; inset: 0; z-index: 4;
+          background: linear-gradient(115deg,
+            transparent 30%, rgba(255,255,255,0.12) 50%, transparent 70%);
+          transform: translateX(-100%);
+          transition: none;
+          pointer-events: none;
+        }
+        .dev-tile:hover::after {
+          animation: tile-shimmer 0.65s ease forwards;
+        }
+        @keyframes tile-shimmer {
+          0%   { transform: translateX(-100%); }
+          100% { transform: translateX(120%);  }
+        }
+
         .dev-tile-img {
           display: block; width: 100%; height: auto;
           transition: transform 0.7s cubic-bezier(0.16,1,0.3,1);
         }
-        .dev-tile:hover .dev-tile-img { transform: scale(1.06); }
+        .dev-tile:hover .dev-tile-img { transform: scale(1.07); }
         .dev-tile-overlay {
           position: absolute; inset: 0;
           background: linear-gradient(to top,
-            rgba(0,0,0,0.75) 0%,
-            rgba(0,0,0,0.2) 30%,
-            transparent 60%);
-          opacity: 0.72;
+            rgba(0,0,0,0.78) 0%,
+            rgba(0,0,0,0.18) 35%,
+            transparent 65%);
+          opacity: 0.75;
           transition: opacity 0.3s;
         }
-        .dev-tile:hover .dev-tile-overlay { opacity: 0.92; }
+        .dev-tile:hover .dev-tile-overlay { opacity: 0.95; }
         .dev-tile-meta {
           position: absolute; bottom: 10px; left: 10px; right: 10px;
-          display: flex; justify-content: space-between; align-items: flex-end;
-          gap: 6px;
-          opacity: 0.88;
-          transition: transform 0.3s, opacity 0.3s;
-          transform: translateY(2px);
+          display: flex; align-items: flex-end; gap: 6px;
+          opacity: 0;
+          transition: transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.35s;
+          transform: translateY(8px);
+          z-index: 5;
         }
         .dev-tile:hover .dev-tile-meta {
           opacity: 1; transform: translateY(0);
@@ -916,14 +1045,6 @@ export default function DeveloperPage() {
           padding: 3px 8px; border-radius: 99px;
           white-space: nowrap;
           backdrop-filter: blur(8px);
-        }
-        .dev-tile-date {
-          font-size: 9px; font-weight: 600;
-          color: rgba(255,255,255,0.58);
-          padding: 3px 7px; border-radius: 99px;
-          background: rgba(0,0,0,0.35);
-          backdrop-filter: blur(8px);
-          white-space: nowrap;
         }
 
         /* Footer */
