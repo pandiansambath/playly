@@ -91,7 +91,7 @@ const PHOTO_FILES = [
 interface Photo { src: string; full: string; mood: Mood }
 
 const PHOTOS: Photo[] = PHOTO_FILES.map(f => ({
-  src:  `/me/${f}`,
+  src: `/me/${f}`,
   full: `${PHOTO_CDN}/${cdnKey(f)}`,
   mood: moodFromFilename(f),
 }))
@@ -132,20 +132,21 @@ const TECH = [
 ]
 
 // ══════════════════════════════════════════════════════════════
-// PROCEDURAL AMBIENT MUSIC — feel-good C-major pad + arpeggio
-// Layered sine/triangle pads in C major 7 (C-E-G-B) with slow
-// LFO swells + a soft pentatonic arpeggio loop. Volume 0.32.
+// AMBIENT MUSIC — module-level singleton so the file starts
+// downloading as soon as this JS is parsed (before React mounts).
 // ══════════════════════════════════════════════════════════════
+
+// Preload immediately at module evaluation time — NOT inside useEffect
+const _preloadedAudio: HTMLAudioElement | null = typeof window !== 'undefined' ? (() => {
+  const a = new Audio('/page_song.mp3')
+  a.loop = true
+  a.volume = 0
+  a.preload = 'auto'
+  return a
+})() : null
+
 function createAmbient() {
-  // Create + preload immediately so the file is buffered in RAM.
-  // By the time the user first taps, it's already downloaded — instant play.
-  const audio = typeof window !== 'undefined' ? (() => {
-    const a = new Audio('/page_song.mp3')
-    a.loop = true
-    a.volume = 0
-    a.preload = 'auto'   // tell browser: download the whole file now
-    return a
-  })() : null
+  const audio = _preloadedAudio
   let running = false
   let _volume = 0.45
 
@@ -164,7 +165,7 @@ function createAmbient() {
           if (audio) audio.volume = Math.min(target, v)
           if (v >= target) clearInterval(t)
         }, 50)
-      }).catch(() => {})
+      }).catch(() => { })
       running = true
     } catch { }
   }
@@ -230,11 +231,11 @@ function Lightbox({ photos, index, onClose, onNav }: {
           onClick={async e => {
             e.stopPropagation()
             try {
-              const res  = await fetch(p.full)
+              const res = await fetch(p.full)
               const blob = await res.blob()
-              const url  = URL.createObjectURL(blob)
-              const a    = document.createElement('a')
-              a.href     = url
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url
               a.download = p.full.split('/').pop() || 'photo.jpg'
               document.body.appendChild(a); a.click(); document.body.removeChild(a)
               URL.revokeObjectURL(url)
@@ -495,7 +496,7 @@ export default function DeveloperPage() {
               </a>
             </div>
             <div className="dev-hero-metrics">
-              <div><b>17th</b><span>Anna Uni · Gold Medal</span></div>
+              <div><b>17th</b><span>Anna University · <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" style={{display:'inline-block',verticalAlign:'middle',marginBottom:'1px'}}><circle cx="12" cy="9" r="7" fill="url(#gm_gold)" stroke="#B8860B" strokeWidth="1"/><path d="M8 16l1.5 5h5L16 16" fill="url(#gm_ribbon)" stroke="#c0392b" strokeWidth="0.5"/><defs><radialGradient id="gm_gold" cx="40%" cy="35%" r="60%"><stop offset="0%" stopColor="#FFF176"/><stop offset="50%" stopColor="#FFD700"/><stop offset="100%" stopColor="#B8860B"/></radialGradient><linearGradient id="gm_ribbon" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#e74c3c"/><stop offset="100%" stopColor="#922b21"/></linearGradient></defs></svg></span></div>
               <div><b>TCS</b><span>Digital · Innovator</span></div>
               <div><b>2024 →</b><span>Systems Engineer</span></div>
             </div>
