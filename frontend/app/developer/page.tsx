@@ -139,7 +139,7 @@ const TECH = [
 function createAmbient() {
   let audio: HTMLAudioElement | null = null
   let running = false
-  let _volume = 0.55
+  let _volume = 0.45
 
   function start() {
     if (running) return
@@ -147,9 +147,20 @@ function createAmbient() {
       if (!audio) {
         audio = new Audio('/page_song.mp3')
         audio.loop = true
-        audio.volume = _volume
+        audio.volume = 0  // start silent, fade in
       }
-      audio.play().catch(() => {})
+      audio.play().then(() => {
+        // Fade in over 1.5s so it doesn't slam
+        if (!audio) return
+        let v = 0
+        const target = _volume
+        const steps = 30
+        const t = setInterval(() => {
+          v += target / steps
+          if (audio) audio.volume = Math.min(target, v)
+          if (v >= target) clearInterval(t)
+        }, 50)
+      }).catch(() => {})
       running = true
     } catch { }
   }
@@ -282,7 +293,7 @@ export default function DeveloperPage() {
   const [musicOn, setMusicOn] = useState(true)
   const [musicStarted, setMusicStarted] = useState(false)
   const [showVolPanel, setShowVolPanel] = useState(false)
-  const [volume, setVolume] = useState(0.55)
+  const [volume, setVolume] = useState(0.45)
   const ambientRef = useRef<ReturnType<typeof createAmbient> | null>(null)
   const volPanelRef = useRef<HTMLDivElement>(null)
 
@@ -308,9 +319,11 @@ export default function DeveloperPage() {
 
   useEffect(() => {
     if (!ambientRef.current) return
-    if (musicOn) { ambientRef.current.start(); setMusicStarted(true) }
+    // Only act on user-driven toggles (musicStarted = already had first interaction)
+    if (!musicStarted) return
+    if (musicOn) ambientRef.current.start()
     else ambientRef.current.stop()
-  }, [musicOn])
+  }, [musicOn, musicStarted])
 
   // Close volume panel when clicking outside
   useEffect(() => {
