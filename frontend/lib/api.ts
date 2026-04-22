@@ -34,7 +34,7 @@ async function headers() {
 
 async function get(path: string) {
   try {
-    const res = await fetch(`${BASE}${path}`, { headers: await headers() })
+    const res = await fetch(`${BASE}${path}`, { headers: await headers(), cache: 'no-store' })
     if (!res.ok) throw new Error(await res.text())
     return res.json()
   } catch (e: any) {

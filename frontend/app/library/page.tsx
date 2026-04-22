@@ -24,8 +24,15 @@ export default function LibraryPage() {
       api.getLibrary().then(d => {
         setEntries(d.songs)
         setLoading(false)
-        // Kick off background preloading immediately — blob URLs = instant play
-        preloadSongs(d.songs.map((e: any) => e.songs))
+        const songs = d.songs.map((e: any) => e.songs)
+        // Preload into Audio buffer for instant playback
+        preloadSongs(songs)
+        // Also warm the CDN cache for each song URL (first 64KB only)
+        songs.forEach((s: any) => {
+          if (s?.supabase_url) {
+            fetch(s.supabase_url, { method: 'HEAD', mode: 'no-cors' }).catch(() => {})
+          }
+        })
       }).catch(() => setLoading(false))
     }
 
