@@ -6,3 +6,4 @@ httpx
 yt-dlp[default]
 python-multipart
 pydantic
+boto3

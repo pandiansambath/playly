@@ -1,7 +1,11 @@
 import re
 import json
 import asyncio
+import os
+import io
 import httpx
+import boto3
+from botocore.config import Config
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -10,16 +14,56 @@ from services.supabase_client import supabase
 from services.ytdlp import download_audio
 from services.loader_to import download_audio_via_loader, resolve_video_download
 
+# ── Cloudflare R2 client (S3-compatible) ──────────────────────────────────────
+# Set these in k8s secrets: R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
+# R2_ACCOUNT_ID and R2_BUCKET are non-secret and can be hardcoded or env vars.
+_R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID", "8c5d6c240f082caf6b158600b6cd4bc7")
+_R2_BUCKET     = os.getenv("R2_BUCKET", "playly-songs")
+_R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "https://pub-fd9fe8dc59834d7bad552cdd1e3db39a.r2.dev")
 
-async def _prewarm_cdn(url: str) -> None:
-    """Fetch the freshly-uploaded file once so the Supabase CDN edge has it
-    cached before the user's browser asks. Silent on failure — this is best
-    effort and must never block the response."""
+def _get_r2():
+    key = os.getenv("R2_ACCESS_KEY_ID")
+    secret = os.getenv("R2_SECRET_ACCESS_KEY")
+    if not key or not secret:
+        return None
+    return boto3.client(
+        "s3",
+        endpoint_url=f"https://{_R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+        aws_access_key_id=key,
+        aws_secret_access_key=secret,
+        config=Config(signature_version="s3v4"),
+        region_name="auto",
+    )
+
+def _upload_to_r2(mp3_bytes: bytes, filename: str) -> str | None:
+    """Upload mp3 bytes to R2. Returns public CDN URL or None on failure."""
     try:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as c:
-            await c.get(url, headers={"Range": "bytes=0-65535"})
+        r2 = _get_r2()
+        if not r2:
+            return None
+        r2.upload_fileobj(
+            io.BytesIO(mp3_bytes),
+            _R2_BUCKET,
+            f"songs/{filename}",
+            ExtraArgs={"ContentType": "audio/mpeg", "CacheControl": "public, max-age=31536000"},
+        )
+        return f"{_R2_PUBLIC_URL}/songs/{filename}"
     except Exception:
-        pass
+        return None
+
+def _upload_to_supabase(mp3_bytes: bytes, storage_path: str) -> str:
+    supabase.storage.from_("songs").upload(
+        storage_path, mp3_bytes,
+        {"content-type": "audio/mpeg", "cache-control": "public, max-age=31536000"}
+    )
+    return supabase.storage.from_("songs").get_public_url(storage_path)
+
+def _upload_audio(mp3_bytes: bytes, youtube_id: str) -> str:
+    """Try R2 first, fall back to Supabase storage."""
+    r2_url = _upload_to_r2(mp3_bytes, f"{youtube_id}.mp3")
+    if r2_url:
+        return r2_url
+    return _upload_to_supabase(mp3_bytes, f"songs/{youtube_id}.mp3")
 
 router = APIRouter()
 
@@ -49,21 +93,11 @@ async def download_song(req: DownloadRequest, user=Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(500, f"Download failed: {e}")
 
-    # 3. Upload to Supabase Storage
-    storage_path = f"songs/{req.youtube_id}.mp3"
+    # 3. Upload to R2 (falls back to Supabase if R2 not configured)
     try:
-        supabase.storage.from_("songs").upload(
-            storage_path, mp3_bytes,
-            {"content-type": "audio/mpeg", "cache-control": "public, max-age=31536000"}
-        )
+        cdn_url = _upload_audio(mp3_bytes, req.youtube_id)
     except Exception as e:
         raise HTTPException(500, f"Storage upload failed: {e}")
-
-    cdn_url = supabase.storage.from_("songs").get_public_url(storage_path)
-
-    # Pre-warm the Supabase CDN edge so the first /play request is instant
-    # instead of hitting origin (~10s on free tier).
-    asyncio.create_task(_prewarm_cdn(cdn_url))
 
     # 4. Save metadata
     song_data = {
@@ -109,14 +143,8 @@ async def download_song_stream(req: DownloadRequest, request: Request, user=Depe
             mp3_bytes, info = await download_audio_via_loader(req.youtube_id, on_progress=on_progress)
 
             await queue.put({"stage": "uploading", "pct": 0})
-            storage_path = f"songs/{req.youtube_id}.mp3"
-            supabase.storage.from_("songs").upload(
-                storage_path, mp3_bytes,
-                {"content-type": "audio/mpeg", "cache-control": "public, max-age=31536000"},
-            )
+            cdn_url = _upload_audio(mp3_bytes, req.youtube_id)
             await queue.put({"stage": "uploading", "pct": 80})
-            cdn_url = supabase.storage.from_("songs").get_public_url(storage_path)
-            asyncio.create_task(_prewarm_cdn(cdn_url))
 
             song_data = {
                 "youtube_id": req.youtube_id,
