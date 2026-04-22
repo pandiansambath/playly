@@ -230,11 +230,7 @@ function Lightbox({ photos, index, onClose, onNav }: {
         <button
           onClick={e => {
             e.stopPropagation()
-            const filename = p.full.split('/').pop() || 'photo.jpg'
-            const a = document.createElement('a')
-            a.href = `/api/photo-dl?url=${encodeURIComponent(p.full)}`
-            a.download = filename
-            document.body.appendChild(a); a.click(); document.body.removeChild(a)
+            window.open(`/api/photo-dl?url=${encodeURIComponent(p.full)}`, '_blank', 'noopener')
           }}
           className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all hover:scale-110"
           style={{ background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.4)', color: '#c4b5fd' }}
