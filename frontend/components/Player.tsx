@@ -35,10 +35,20 @@ function initAnalyser(): AnalyserNode | null {
     _analyser.smoothingTimeConstant = 0.78
     _boost = _audioCtx.createGain()
     _boost.gain.value = MAX_BOOST    // constant boost — slider scales via audio.volume
-    const src = _audioCtx.createMediaElementSource(audio)
-    src.connect(_analyser)
-    _analyser.connect(_boost)
-    _boost.connect(_audioCtx.destination)
+    // Resume context BEFORE wiring createMediaElementSource.
+    // createMediaElementSource immediately reroutes audio through the AudioContext;
+    // if the context is still suspended at that point, audio goes silent.
+    // By connecting only after resume(), audio never interrupts.
+    _audioCtx.resume().then(() => {
+      if (!_audioCtx || !_analyser || !_boost) return
+      const src = _audioCtx.createMediaElementSource(audio)
+      src.connect(_analyser)
+      _analyser.connect(_boost)
+      _boost.connect(_audioCtx.destination)
+    }).catch(() => {
+      // Resume rejected (browser blocked) — reset so next user gesture can retry
+      _analyserReady = false; _analyser = null; _boost = null; _audioCtx = null
+    })
     return _analyser
   } catch { return null }
 }
@@ -754,14 +764,13 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
   }
 
   function ensureAnalyser() {
-    const firstInit = !_analyser
-    if (firstInit) { initAnalyser(); setAnalyserReady(!!_analyser) }
-    // Always resume — AudioContext starts suspended on mobile, resume is async.
-    // Also restore boost gain in case it was zeroed by video mode.
-    if (_audioCtx) {
+    if (!_analyser) {
+      initAnalyser()
+      setAnalyserReady(!!_analyser)
+    } else if (_audioCtx?.state === 'suspended') {
+      // Context auto-suspended by browser (mobile inactivity) — resume and restore
       _audioCtx.resume().then(() => {
         if (_boost) _boost.gain.value = MAX_BOOST
-        // Restore audio element volume/unmute in case something zeroed it
         const audio = getAudio()
         if (audio) { audio.muted = false; audio.volume = usePlayerStore.getState().volume }
       })
