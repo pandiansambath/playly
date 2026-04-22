@@ -230,14 +230,16 @@ function LandingPage() {
             style={{
               fontSize: 'clamp(2.2rem, 5vw, 3.8rem)',
               fontWeight: 900,
-              lineHeight: 1.08,
+              lineHeight: 1.12,
               letterSpacing: '-0.03em',
               color: 'var(--text-primary)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.05em',
             }}>
-            <SplitText text="Your music," />{' '}
-            <SplitText text="beautifully" gradient delay={0.42} />
-            <br />
-            <SplitText text="streamed." delay={0.85} />
+            <span><SplitText text="Your music," /></span>
+            <span><SplitText text="beautifully" gradient delay={0.42} /></span>
+            <span><SplitText text="streamed." delay={0.85} /></span>
           </h1>
           <p className="landing-subtitle mt-3 text-sm leading-relaxed fade-in delay-500"
             style={{ color: 'var(--text-secondary)', maxWidth: 360 }}>

@@ -781,10 +781,10 @@ main { animation: fade-in 0.3s cubic-bezier(0.16,1,0.3,1); }
    (fixes Chrome issue where signup button was pushed below fold)
    ═══════════════════════════════════════════════════════════ */
 .landing-root {
-  min-height: 100dvh;
+  height: 100dvh;
+  max-height: 100dvh;
   display: flex;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   position: relative;
 }
 
@@ -796,7 +796,7 @@ main { animation: fade-in 0.3s cubic-bezier(0.16,1,0.3,1); }
   flex: 1;
   position: relative;
   z-index: 10;
-  min-height: 100dvh;
+  overflow-y: auto;
 }
 
 /* On short viewports, stop centering so nothing clips */
@@ -815,15 +815,14 @@ main { animation: fade-in 0.3s cubic-bezier(0.16,1,0.3,1); }
   .landing-subtitle     { display: none !important; }
 }
 
-/* Logo row — logo left, disc right, nothing overflows viewport */
+/* Logo row — logo left, disc right */
 .landing-logo-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  /* clip any disc glow that would bleed right */
-  overflow: hidden;
-  padding-right: 4px;
+  padding-right: 8px;
+  /* No overflow:hidden — it clips disc box-shadow into a square */
 }
 
 /* Mobile compact music disc (shown in left panel, clickable → /developer) */
