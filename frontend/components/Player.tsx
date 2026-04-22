@@ -768,11 +768,13 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
       initAnalyser()
       setAnalyserReady(!!_analyser)
     } else if (_audioCtx?.state === 'suspended') {
-      // Context auto-suspended by browser (mobile inactivity) — resume and restore
+      // Context auto-suspended by browser (mobile inactivity) — resume and restore,
+      // but only unmute audio if we're NOT in video mode (video sets audio.muted=true on purpose).
       _audioCtx.resume().then(() => {
-        if (_boost) _boost.gain.value = MAX_BOOST
+        const { showVideo, volume } = usePlayerStore.getState()
+        if (_boost) _boost.gain.value = showVideo ? 0 : MAX_BOOST
         const audio = getAudio()
-        if (audio) { audio.muted = false; audio.volume = usePlayerStore.getState().volume }
+        if (audio && !showVideo) { audio.muted = false; audio.volume = volume }
       })
     }
   }
@@ -915,7 +917,6 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
 
   // ── Master play/pause ────────────────────────────────
   function handlePlayPause() {
-    ensureAnalyser()
     if (showVideo) {
       const cmd = isVideoPlaying ? 'pauseVideo' : 'playVideo'
       iframeRef.current?.contentWindow?.postMessage(
