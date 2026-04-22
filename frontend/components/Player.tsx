@@ -754,8 +754,18 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
   }
 
   function ensureAnalyser() {
-    if (!_analyser) { initAnalyser(); resumeCtx(); setAnalyserReady(!!_analyser) }
-    resumeCtx()
+    const firstInit = !_analyser
+    if (firstInit) { initAnalyser(); setAnalyserReady(!!_analyser) }
+    // Always resume — AudioContext starts suspended on mobile, resume is async.
+    // Also restore boost gain in case it was zeroed by video mode.
+    if (_audioCtx) {
+      _audioCtx.resume().then(() => {
+        if (_boost) _boost.gain.value = MAX_BOOST
+        // Restore audio element volume/unmute in case something zeroed it
+        const audio = getAudio()
+        if (audio) { audio.muted = false; audio.volume = usePlayerStore.getState().volume }
+      })
+    }
   }
 
   // ── YT postMessage listener ─────────────────────────
