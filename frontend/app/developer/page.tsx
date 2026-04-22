@@ -228,21 +228,13 @@ function Lightbox({ photos, index, onClose, onNav }: {
       }} />
       <div className="absolute top-4 right-4 z-10 flex gap-2">
         <button
-          onClick={async e => {
+          onClick={e => {
             e.stopPropagation()
-            try {
-              const res = await fetch(p.full)
-              const blob = await res.blob()
-              const url = URL.createObjectURL(blob)
-              const a = document.createElement('a')
-              a.href = url
-              a.download = p.full.split('/').pop() || 'photo.jpg'
-              document.body.appendChild(a); a.click(); document.body.removeChild(a)
-              URL.revokeObjectURL(url)
-            } catch {
-              // cross-origin fetch failed — fall back to open-in-tab
-              window.open(p.full, '_blank', 'noopener')
-            }
+            const filename = p.full.split('/').pop() || 'photo.jpg'
+            const a = document.createElement('a')
+            a.href = `/api/photo-dl?url=${encodeURIComponent(p.full)}`
+            a.download = filename
+            document.body.appendChild(a); a.click(); document.body.removeChild(a)
           }}
           className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all hover:scale-110"
           style={{ background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.4)', color: '#c4b5fd' }}
