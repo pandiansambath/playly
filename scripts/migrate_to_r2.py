@@ -25,6 +25,9 @@ import sys
 import time
 from pathlib import Path
 
+# Fix Windows console emoji crash
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore
+
 import boto3
 import httpx
 from botocore.config import Config
@@ -171,19 +174,13 @@ SUPABASE_PHOTO_CDN = "https://koagwifcrrkojeowevqn.supabase.co/storage/v1/object
 def migrate_photos():
     print("\n=== Migrating dev photos ===")
     # List all objects in dev-photos bucket
+    import json as _json
     with httpx.Client(timeout=30) as c:
-        resp = c.get(
+        resp = c.post(
             f"{SUPABASE_URL}/storage/v1/object/list/dev-photos",
             headers={**SUPABASE_HEADERS, "Content-Type": "application/json"},
-            json={"limit": 500, "offset": 0},
+            content=_json.dumps({"limit": 500, "offset": 0, "prefix": "", "sortBy": {"column": "name", "order": "asc"}}).encode(),
         )
-        if resp.status_code != 200:
-            # Try POST for listing
-            resp = c.post(
-                f"{SUPABASE_URL}/storage/v1/object/list/dev-photos",
-                headers={**SUPABASE_HEADERS, "Content-Type": "application/json"},
-                json={"limit": 500, "offset": 0},
-            )
         resp.raise_for_status()
         objects = resp.json()
 
