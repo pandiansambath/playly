@@ -35,6 +35,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" data-theme="dark">
       <head>
         <link rel="apple-touch-icon" href="/icon-192.png" />
+        {/* Preconnect to CDNs so first asset request has no DNS+TCP overhead */}
+        <link rel="preconnect" href="https://pub-fd9fe8dc59834d7bad552cdd1e3db39a.r2.dev" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://pub-fd9fe8dc59834d7bad552cdd1e3db39a.r2.dev" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>

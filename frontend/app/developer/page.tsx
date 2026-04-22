@@ -46,7 +46,7 @@ function moodFromFilename(name: string): Mood {
 // from the frontend pod. Downloads grab the full-resolution original from
 // the public `dev-photos` Supabase bucket so visitors can save the real
 // thing. See scripts/upload_dev_photos.py for the upload flow.
-const PHOTO_CDN = 'https://koagwifcrrkojeowevqn.supabase.co/storage/v1/object/public/dev-photos'
+const PHOTO_CDN = 'https://pub-fd9fe8dc59834d7bad552cdd1e3db39a.r2.dev/dev-photos'
 
 // Three filenames contain '~' which Supabase storage rejects. When we built
 // the CDN URL we swap them for '_' (matches scripts/upload_dev_photos.py).
