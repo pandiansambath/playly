@@ -20,7 +20,7 @@ spec:
       - name: frontend
         # Image tag is auto-updated by GitHub Actions CI/CD on every push
         # ACR URL format: <acr-name>.azurecr.io/<repo>/<image>:<tag>
-        image: playlyacr.azurecr.io/playly/frontend:1e65b2307f95d32b0fa2748ea92029c0d86bb1be
+        image: playlyacr.azurecr.io/playly/frontend:991562c8d049453c44b3b8603c0d11a58d1815ac
         ports:
         - containerPort: 3000
 
