@@ -1,0 +1,3 @@
+# Never commit the private SSH key
+*.key
+!*.key.pub

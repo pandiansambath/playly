@@ -7,10 +7,41 @@
 
 ## Codebase Snapshot (for context recovery)
 
-- **Frontend**: Next.js (App Router) in `frontend/` — `app/`, `components/`, `store/playerStore.ts`, `lib/{api,supabase,colorExtract}.ts`.
+- **Frontend**: Next.js (App Router) in `frontend/` — `app/`, `components/`, `store/{playerStore,libraryStore}.ts`, `lib/{api,supabase,colorExtract}.ts`.
 - **Backend**: FastAPI in `backend/` — `routers/{search,download,library,favorites,history,playlists,preferences}.py`, `services/{youtube,ytdlp,loader_to,supabase_client,auth}.py`.
 - **Infra**: AKS (Azure Kubernetes) + ArgoCD auto-sync, Cloudflare CDN, Supabase (DB + Storage buckets: `dev-photos`, `avatars`, `songs`).
+- **Oracle Cloud VM** (new, 2026-04-25): `playly-yt-worker` in `ap-mumbai-1`, public IP `161.118.180.236`, port 8080 open. Shape `VM.Standard.E2.1.Micro` (1 OCPU + 1 GB RAM, AMD x86, Always Free). Hosts the FastAPI worker at `/opt/playly-yt-worker/`. SSH key in `oracle_instance_keys/ssh-key-2026-04-25.key` (gitignored). OCI CLI configured locally with `~/.oci/config`.
 - **Known constraint**: Azure egress IPs are blocked by YouTube → cookie-bypass approach unstable → currently using a 3rd-party site fallback for downloads (slow, ~5 min).
+
+---
+
+## 🔥 SESSION SUMMARY (2026-04-25)
+
+### What shipped (commit `991562c`)
+- **Library refresh fix** — Zustand `libraryStore` with optimistic updates. New file `frontend/store/libraryStore.ts`; updated `LibraryPreloader.tsx`, `app/library/page.tsx`, `app/page.tsx`. **User reports it's STILL not working** — needs ArgoCD-deploy verification + further investigation (see §2.ii).
+- **Magic button visibility over video** — canvas now floats above iframe with `mix-blend-mode: screen`. Visualizer beats keep reacting during video playback.
+- **Magic BUTTON styling** — rotating conic-gradient ring + beat-burst halo + idle twinkle + better hover. (User clarified they wanted MagicCanvas EFFECTS enhanced, not button styling — see §2.iii.2.)
+- **BUGS_TRACKER.md** to keep multi-bug context.
+
+### What's still broken / to do (from user feedback)
+- **2.ii Library refresh** — user says even after the Zustand fix, downloaded song doesn't appear in /library until logout/login. Needs deeper investigation (could be ArgoCD lag, could be a bug I missed).
+- **2.iii.2 MagicCanvas effects** — user wants the orbs/missiles/ripples themselves enhanced (more impressive visuals), NOT the button.
+- **2.iv Slow play** — even existing library songs take 1-2s to start. User suspects Cloudflare/CDN; may resolve once §1 R2 migration is fully done.
+
+### Today's big wins on the download problem
+- Set up Oracle Cloud VM `playly-yt-worker` in ap-mumbai-1 with FastAPI worker (file in `oracle_instance_keys/worker.py`, deploy script in `bootstrap.sh`).
+- Confirmed **yt-dlp is blocked from Oracle too** — YouTube flags Mumbai datacenter IPs the same way it flags Azure. Tried tv_simply, ios, web_safari, mweb, android, tv_embedded, android_vr — all bot-checked.
+- Confirmed **public proxies (Cobalt, Piped instances, Invidious) are also blocked** — YouTube clamped down on them too in 2025/2026.
+- 🎉 **Discovered masstamilan.dev works perfectly** from Oracle (1.35-1.54s for a 320 kbps MP3 vs 5+ min via loader.to). Uses `curl_cffi` with Chrome TLS impersonation to bypass Cloudflare. Built `/fetch/masstamilan` endpoint on the worker (Tamil/Indian songs only).
+- Probed 6 alternative YT→MP3 sites for the **global (non-Tamil) fallback** (see §2.i.b below) — three look API-feasible: `v2.y2mate.nu`, `v16.www-y2mate.com`, `screenapp.io`.
+
+### Tomorrow's punch list (in order)
+1. **Verify Zustand library fix is actually deployed** — `kubectl rollout status deployment/playly-frontend -n playly`. If old pods still serving, force redeploy.
+2. If library bug persists after fresh pods, **debug from network tab**: does `/songs?page=1` actually return the new song after a download?
+3. **Reverse-engineer y2mate.nu API** (test from Oracle worker — see §2.i.b plan). Add `/fetch/y2mate` endpoint as the global fallback for non-Tamil songs.
+4. **Wire AKS backend to Oracle worker**: AKS calls `https://oracle-worker.../fetch/masstamilan` (or `/fetch/y2mate`) before falling back to loader.to.
+5. **Enhance MagicCanvas effects** (orbs, missiles, ripples) — the visualizer itself, not the button.
+6. **R2 migration of existing assets** — verify R2 secrets in AKS, migrate old `dev-photos` + old songs from Supabase to R2.
 
 ---
 
@@ -73,6 +104,54 @@
     - If fingerprint confidence < threshold (rare YT remixes / live versions), fall back to slow YT-download path for that song only.
   - **MVP cheap version (skip fingerprinting)**: client-side correlation on first toggle. Load 5s of YT audio buffer, compare with masstamilan buffer at same position via Web Audio `AnalyserNode` peaks → estimate offset. Cache forever.
   - **Result**: masstamilan speed for 100% of plays + accurate video sync for 100% of toggles. One-time ~5s background cost per new song.
+
+### 2.i.0 Download strategy — DECIDED (2026-04-25)
+
+After a full day of testing, here is the concrete plan:
+
+**Tamil/Indian songs** → masstamilan via Oracle worker (1.5s — already working)
+**Everything else** → Playwright + headless Chromium on Oracle, driving `v16.www-y2mate.com` (~10-15s)
+**Last-resort fallback** → existing loader.to chain (~5 min, works always)
+
+#### What was tested today and ruled out
+
+| Approach | Result |
+|---|---|
+| yt-dlp on Oracle (Mumbai), latest nightly, all `player_client` variants (tv_simply, ios, web_safari, mweb, android, tv_embedded, android_vr) | ❌ ALL bot-checked. YouTube flags Mumbai datacenter IPs same as Azure |
+| yt-dlp + 8-day-old logged-in cookies | ❌ Bot-checked anyway (cookies expired or IP-locked) |
+| Cobalt API public instance | ❌ Now requires Cloudflare Turnstile (browser CAPTCHA) |
+| Piped public instances (kavin, adminforge, privacydev, r4fo, smnz, private.coffee) | ❌ Most dead, surviving ones say "YouTube probably temporarily blocked anonymous watch access" |
+| `v2.y2mate.nu` | ❌ Connection reset from Oracle (rate limiting) |
+| `media.ytmp3.gg` | ❌ Cloudflare JS challenge — needs real browser |
+| `v16.www-y2mate.com` | ❌ POST `/convert/` is JS-driven; bare HTTP returns homepage. **BUT** site is reachable from Oracle without challenge — the candidate for Playwright automation |
+| `screenapp.io` | ❌ Next.js SPA, API loaded client-side |
+| `en1.y2mate.is` | ❌ HTTP 520 from Oracle |
+| `mp3convert.org` | ❌ Cloudflare JS challenge |
+| `www.y2mate.com` (parent) | ❌ Domain dead, no DNS |
+| **`masstamilan.dev`** via curl_cffi | ✅ **1.5s for 320 kbps MP3** — TLS impersonation bypasses Cloudflare cleanly |
+
+#### Tomorrow's concrete tasks
+
+- [ ] **Install Playwright + headless Chromium on Oracle worker**:
+  ```bash
+  ssh ubuntu@161.118.180.236
+  /opt/playly-yt-worker/venv/bin/pip install playwright
+  sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libgbm1 libasound2
+  /opt/playly-yt-worker/venv/bin/playwright install chromium
+  ```
+- [ ] Add `/fetch/y2mate` endpoint that:
+  1. Launches headless Chromium
+  2. Navigates to `https://v16.www-y2mate.com/`
+  3. Pastes the YT URL into the search box
+  4. Clicks the convert button
+  5. Waits for the download link to appear
+  6. Streams the MP3 bytes back to caller
+- [ ] Wire AKS backend `/download` to call Oracle worker first:
+  - Try `/fetch/masstamilan` (Tamil match) → 1.5s
+  - On 404 or non-Tamil: try `/fetch/y2mate` → 10-15s
+  - On failure: existing loader.to fallback → 5 min
+- [ ] Add health-check + circuit-breaker so AKS backend skips Oracle worker if down
+- [ ] **R2 secrets check**: `kubectl describe deployment playly-backend -n playly | grep R2_` — confirm `R2_ACCESS_KEY_ID` + `R2_SECRET_ACCESS_KEY` are actually set in AKS (backend code is there, secrets may not be)
 
 ### 2.i.a. Shorts / non-song content → direct yt-dlp path
 
