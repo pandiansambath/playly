@@ -1,47 +1,39 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
 import { Library, Search, Clock, AlignLeft, Shuffle, Play, Grid3X3, List } from 'lucide-react'
-import { api, invalidateCache } from '@/lib/api'
+import { api } from '@/lib/api'
 import { SongCard } from '@/components/SongCard'
-import { Song, UserSong } from '@/lib/supabase'
+import { Song } from '@/lib/supabase'
 import { preloadSongs, usePlayerStore } from '@/store/playerStore'
+import { useLibraryStore } from '@/store/libraryStore'
 import { showToast } from '@/components/Toast'
 
 type SortKey = 'added' | 'alpha'
 
 export default function LibraryPage() {
-  const [entries,  setEntries]  = useState<UserSong[]>([])
-  const [loading,  setLoading]  = useState(true)
+  const entries = useLibraryStore(s => s.entries)
+  const loaded  = useLibraryStore(s => s.loaded)
+  const loading = useLibraryStore(s => s.loading) && !loaded
   const [filter,   setFilter]   = useState('')
   const [sort,     setSort]     = useState<SortKey>('added')
   const setCurrentSong = usePlayerStore(s => s.setCurrentSong)
 
   useEffect(() => {
-    function fetchLibrary() {
-      // Always invalidate so we never show stale data after a download
-      invalidateCache('library')
-      setLoading(true)
-      api.getLibrary().then(d => {
-        setEntries(d.songs)
-        setLoading(false)
-        const songs = d.songs.map((e: any) => e.songs)
-        // Preload into Audio buffer for instant playback
-        preloadSongs(songs)
-        // Also warm the CDN cache for each song URL (first 64KB only)
-        songs.forEach((s: any) => {
-          if (s?.supabase_url) {
-            fetch(s.supabase_url, { method: 'HEAD', mode: 'no-cors' }).catch(() => {})
-          }
-        })
-      }).catch(() => setLoading(false))
+    // Force-refresh on every mount so navigations from search land on fresh data
+    useLibraryStore.getState().fetch(true).then(() => {
+      const songs = useLibraryStore.getState().entries.map(e => e.songs)
+      preloadSongs(songs)
+      songs.forEach(s => {
+        if (s?.supabase_url) {
+          fetch(s.supabase_url, { method: 'HEAD', mode: 'no-cors' }).catch(() => {})
+        }
+      })
+    })
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') useLibraryStore.getState().fetch(true)
     }
-
-    fetchLibrary() // Initial fetch
-
-    // Re-fetch on tab visibility change OR window focus — covers Next.js Router
-    // Cache restoring this component without remounting (back-navigation, etc.)
-    const onVisible = () => { if (document.visibilityState === 'visible') fetchLibrary() }
-    const onFocus = () => fetchLibrary()
+    const onFocus = () => useLibraryStore.getState().fetch(true)
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('focus', onFocus)
     return () => {
@@ -53,17 +45,25 @@ export default function LibraryPage() {
   async function toggleFav(songId: string) {
     const e = entries.find(x => x.songs.id === songId)
     if (!e) return
-    e.is_favorite ? await api.removeFavorite(songId) : await api.addFavorite(songId)
-    setEntries(prev => prev.map(x => x.songs.id === songId ? { ...x, is_favorite: !x.is_favorite } : x))
+    const newFav = !e.is_favorite
+    useLibraryStore.getState().setFavorite(songId, newFav)  // optimistic
+    try {
+      newFav ? await api.addFavorite(songId) : await api.removeFavorite(songId)
+    } catch {
+      useLibraryStore.getState().setFavorite(songId, !newFav)  // rollback
+      showToast('Failed to update favorite', false)
+    }
   }
 
   async function deleteSong(songId: string) {
     if (!confirm('Remove this song from your library?')) return
+    const prev = entries.find(x => x.songs.id === songId)
+    useLibraryStore.getState().removeSong(songId)  // optimistic
     try {
       await api.removeSong(songId)
-      setEntries(prev => prev.filter(x => x.songs.id !== songId))
       showToast('Removed from library')
     } catch {
+      if (prev) useLibraryStore.setState(s => ({ entries: [prev, ...s.entries] })) // rollback
       showToast('Failed to remove', false)
     }
   }

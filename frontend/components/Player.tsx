@@ -129,9 +129,10 @@ type Bubble = {
   trail?: { x: number; y: number }[]
 }
 
-function MagicCanvas({ accentColor, onBeat }: {
+function MagicCanvas({ accentColor, onBeat, overVideo = false }: {
   accentColor: string
   onBeat?: (strength: number) => void
+  overVideo?: boolean
 }) {
   const canvasRef  = useRef<HTMLCanvasElement>(null)
   const rafRef     = useRef<number>(0)
@@ -489,7 +490,14 @@ function MagicCanvas({ accentColor, onBeat }: {
     <canvas
       ref={canvasRef}
       className="absolute inset-0 w-full h-full"
-      style={{ zIndex: 2 }}
+      style={{
+        // When video is playing, float canvas ABOVE the iframe with additive
+        // blending so orbs/missiles paint as light over the video without
+        // hiding it. pointer-events:none keeps controls clickable.
+        zIndex: overVideo ? 200 : 2,
+        mixBlendMode: overVideo ? 'screen' : 'normal',
+        pointerEvents: 'none',
+      }}
     />
   )
 }
@@ -950,8 +958,9 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
                var(--bg-base)`,
         }}>
 
-        {/* MAGIC CANVAS — sits behind everything inside player */}
-        {magicOn && <MagicCanvas accentColor={accentColor} onBeat={onMagicBeat} />}
+        {/* MAGIC CANVAS — sits behind UI in audio mode, floats above iframe
+            (with screen blending) in video mode so visuals stay alive. */}
+        {magicOn && <MagicCanvas accentColor={accentColor} onBeat={onMagicBeat} overVideo={showVideo} />}
 
         {/* Soft edge vignette when magic is on — lets bubbles breathe at edges */}
         {magicOn && (

@@ -6,12 +6,13 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { api, invalidateCache } from '@/lib/api'
+import { api } from '@/lib/api'
 import { SearchResult, YTResult } from '@/components/SearchResult'
 import { useAuth } from '@/components/AuthProvider'
 import { showToast } from '@/components/Toast'
 import { supabase } from '@/lib/supabase'
 import { usePlayerStore } from '@/store/playerStore'
+import { useLibraryStore } from '@/store/libraryStore'
 import { Song } from '@/lib/supabase'
 
 // ─────────────────────────────────────────────────────────
@@ -519,22 +520,23 @@ function SearchPage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const router = useRouter()
 
-  // Pre-load library on mount so already-downloaded songs show Play instead of Download
+  // Pre-mark already-downloaded songs by subscribing to the library store.
+  // Because the store is the single source of truth, optimistic adds from a
+  // download immediately update the badges here too.
+  const libraryEntries = useLibraryStore(s => s.entries)
   useEffect(() => {
-    api.getLibrary().then(d => {
-      const doneIds = new Set<string>()
-      const songsMap = new Map<string, Song>()
-        ; (d.songs || []).forEach((e: any) => {
-          const song: Song = e.songs
-          if (song?.youtube_id) {
-            doneIds.add(song.youtube_id)
-            songsMap.set(song.youtube_id, song)
-          }
-        })
-      setDone(doneIds)
-      setDownloadedSongs(songsMap)
-    }).catch(() => {/* silently ignore — user just won't see pre-marked songs */ })
-  }, [])
+    const doneIds = new Set<string>()
+    const songsMap = new Map<string, Song>()
+    libraryEntries.forEach(e => {
+      const song = e.songs
+      if (song?.youtube_id) {
+        doneIds.add(song.youtube_id)
+        songsMap.set(song.youtube_id, song)
+      }
+    })
+    setDone(doneIds)
+    setDownloadedSongs(songsMap)
+  }, [libraryEntries])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -560,6 +562,9 @@ function SearchPage() {
       // Store the real song data (with supabase_url) for immediate playback
       if (result?.song) {
         setDownloadedSongs(prev => new Map(prev).set(r.youtube_id, result.song))
+        // Optimistic library update — song appears in /library the moment we
+        // navigate there, no cache-invalidation guessing.
+        useLibraryStore.getState().addSong(result.song)
       }
       setDone(d => new Set([...d, r.youtube_id]))
       showToast('Added to library ✓')

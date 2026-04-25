@@ -609,6 +609,7 @@ main { animation: fade-in 0.3s cubic-bezier(0.16,1,0.3,1); }
 
 /* Magic button — idle state */
 .magic-btn-idle {
+  position: relative;
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.10);
   transition: all 0.3s ease;
@@ -616,10 +617,31 @@ main { animation: fade-in 0.3s cubic-bezier(0.16,1,0.3,1); }
 .magic-btn-idle:hover {
   background: rgba(139,92,246,0.14);
   border-color: rgba(139,92,246,0.30);
+  box-shadow:
+    0 0 0 2px rgba(139,92,246,0.18),
+    0 0 14px rgba(139,92,246,0.35);
+  transform: scale(1.06);
+}
+/* Soft "twinkle" hint every 6s on idle to draw attention */
+.magic-btn-idle::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: radial-gradient(circle at 50% 50%, rgba(236,72,153,0.45), transparent 60%);
+  opacity: 0;
+  pointer-events: none;
+  animation: magic-idle-twinkle 6s ease-in-out infinite;
+}
+@keyframes magic-idle-twinkle {
+  0%, 90%, 100% { opacity: 0; transform: scale(0.95); }
+  93%           { opacity: 0.55; transform: scale(1.15); }
+  96%           { opacity: 0; transform: scale(1.25); }
 }
 
 /* Magic button — active state */
 .magic-btn-active {
+  position: relative;
   background: linear-gradient(135deg, rgba(139,92,246,0.85), rgba(236,72,153,0.75)) !important;
   border: 1px solid rgba(255,255,255,0.25) !important;
   box-shadow:
@@ -628,6 +650,45 @@ main { animation: fade-in 0.3s cubic-bezier(0.16,1,0.3,1); }
     0 0 32px rgba(236,72,153,0.25),
     inset 0 1px 0 rgba(255,255,255,0.2);
   animation: magic-breathe 3s ease-in-out infinite;
+}
+/* Rotating conic-gradient sweep around the active button — like a tiny aurora */
+.magic-btn-active::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(139,92,246,0.95),
+    rgba(236,72,153,0.95),
+    rgba(56,189,248,0.85),
+    rgba(139,92,246,0.95)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+          mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+  animation: magic-ring-spin 3.6s linear infinite;
+  filter: blur(0.4px) saturate(1.1);
+}
+/* Expanding glow burst that pulses on every beat */
+.magic-btn-active::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  background: radial-gradient(circle at 50% 50%, rgba(236,72,153,0.55), transparent 65%);
+  opacity: 0;
+  pointer-events: none;
+}
+@keyframes magic-ring-spin {
+  to { transform: rotate(360deg); }
 }
 
 @keyframes magic-breathe {
@@ -920,10 +981,27 @@ main { animation: fade-in 0.3s cubic-bezier(0.16,1,0.3,1); }
 /* Magic button — beat pulse scale animation (driven by inline CSS var) */
 @keyframes magic-beat-pop {
   0%   { transform: scale(1); }
-  40%  { transform: scale(1.18); }
+  40%  { transform: scale(1.20); }
   100% { transform: scale(1); }
 }
-.magic-btn-beat { animation: magic-beat-pop 0.28s ease-out; }
+.magic-btn-beat { animation: magic-beat-pop 0.32s cubic-bezier(0.22, 1.4, 0.36, 1); }
+
+/* Beat shockwave — expanding halo on every beat. Driven by ::after on
+   .magic-btn-active when .magic-btn-beat class toggles on the button. */
+@keyframes magic-beat-burst {
+  0%   { opacity: 0.85; transform: scale(0.85); }
+  60%  { opacity: 0.45; transform: scale(1.8);  }
+  100% { opacity: 0;    transform: scale(2.4);  }
+}
+.magic-btn-beat.magic-btn-active::after {
+  animation: magic-beat-burst 0.55s ease-out;
+}
+
+/* Outer ripple ring on beat — extra "wow" factor (sits beyond the button) */
+@keyframes magic-beat-ring {
+  0%   { opacity: 0.7; box-shadow: 0 0 0 0 rgba(236,72,153,0.55); }
+  100% { opacity: 0;   box-shadow: 0 0 0 18px rgba(236,72,153,0);  }
+}
 
 /* v2.0-playly-fixes */
 
