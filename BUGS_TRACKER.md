@@ -105,13 +105,45 @@
   - **MVP cheap version (skip fingerprinting)**: client-side correlation on first toggle. Load 5s of YT audio buffer, compare with masstamilan buffer at same position via Web Audio `AnalyserNode` peaks → estimate offset. Cache forever.
   - **Result**: masstamilan speed for 100% of plays + accurate video sync for 100% of toggles. One-time ~5s background cost per new song.
 
-### 2.i.0 Download strategy — DECIDED (2026-04-25)
+### 2.i.0 Download strategy — FINAL (2026-04-25, after extensive testing)
 
-After a full day of testing, here is the concrete plan:
+After extensive Playwright-driven investigation today, the **honest truth**:
 
-**Tamil/Indian songs** → masstamilan via Oracle worker (1.5s — already working)
-**Everything else** → Playwright + headless Chromium on Oracle, driving `v16.www-y2mate.com` (~10-15s)
-**Last-resort fallback** → existing loader.to chain (~5 min, works always)
+**Tamil/Indian songs** → masstamilan via Oracle worker, 1.5s ✅ (working in `oracle_instance_keys/worker.py`)
+**Everything else** → currently must use existing **loader.to fallback** (~5 min) until we add one of:
+- (A) Logged-in YouTube cookies refreshed weekly (manual user action), OR
+- (B) Residential proxy ($5/mo) for the Oracle worker, OR
+- (C) Phone-home worker on user's PC with `--cookies-from-browser`
+
+**Why not v16.www-y2mate.com / cnv.cx?** I traced the entire chain:
+- v16.www-y2mate.com loads an iframe from `frame.y2meta-uk.com`
+- The MP3 quality buttons trigger an API call to `https://cnv.cx/v2/converter` (a self-hosted Cobalt instance)
+- That API works fine from Oracle (1.3s response), returns a tunnel URL like `https://dl11.yt-dl.click/tunnel?id=...&sig=...`
+- **The download CDN `yt-dl.click` is Cloudflare-protected and bans Oracle Mumbai datacenter IPs** (Cloudflare error: "Sorry, you have been blocked. You are unable to access yt-dl.click")
+- Tested via plain curl_cffi, Playwright APIRequestContext, with/without Origin/Referer headers — same 403 every time
+
+**Why not yt-dlp via real browser?** Even Playwright Chromium loading the YouTube watch page from Oracle gets `playabilityStatus: "Sign in to confirm that you're not a bot"` with **zero adaptiveFormats**. YouTube has fully cordoned off datacenter IPs at the player-response level — anonymous browsing on these IPs gets no streaming data.
+
+#### Probe artifacts (all in `oracle_instance_keys/`)
+
+| File | What it does |
+|---|---|
+| `worker.py` | FastAPI worker with `/fetch/masstamilan` (working) + yt-dlp endpoints (bot-blocked) |
+| `bootstrap.sh` | One-shot install script for the Oracle VM |
+| `probe_y2mate.py` | Discovers v16.www-y2mate.com flow; finds the iframe |
+| `probe_y2mate2.py` | Drills into iframe, finds the MP3 quality buttons |
+| `probe_y2mate3.py` | Clicks 128/192/320 button + waits for `data-attr` populated |
+| `probe_y2mate4.py` | Tracks popups (ad redirects); discovered `cnv.cx` API |
+| `probe_cnv.py` | Captures full cnv.cx request/response — found `key:` header auth |
+| `probe_yt_via_browser.py` | Browser cookies → yt-dlp (still bot-blocked) |
+| `probe_yt_stream.py` | Playwright captures googlevideo audio URL (no streams returned) |
+
+#### Concrete actions for tomorrow's demo
+
+- [ ] **Pre-cache user's favorite songs in the library NOW** so they play instantly during demo (R2/CDN serves them).
+- [ ] **For new download demo**: use a **Tamil song** — masstamilan path is 1.5s, looks impressive.
+- [ ] If a non-Tamil song is needed for demo: pick ONE in advance, download via current loader.to today (takes 5 min), then it's in the library.
+- [ ] Long-term decide between Option A/B/C above — tracker will reflect choice.
 
 #### What was tested today and ruled out
 
