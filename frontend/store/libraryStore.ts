@@ -53,13 +53,17 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   addSong: (song, isFavorite = false) => {
     // Optimistic — show in UI immediately
     set(state => {
-      if (state.entries.some(e => e.songs.id === song.id)) return state
+      if (state.entries.some(e => e.songs.id === song.id)) {
+        console.log('[libraryStore] addSong: song already present, no-op', song.id)
+        return state
+      }
       const optimistic: UserSong = {
         id: `optimistic-${song.id}`,
         is_favorite: isFavorite,
         added_at: new Date().toISOString(),
         songs: song,
       }
+      console.log(`[libraryStore] addSong: optimistic add "${song.title}", total entries now ${state.entries.length + 1}`)
       return { entries: [optimistic, ...state.entries], loaded: true }
     })
     // Background reconcile so the optimistic entry gets the real DB id/timestamp.
@@ -67,8 +71,23 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     // the optimistic add — that was the source of "song disappears after click".
     invalidateCache('library')
     api.getLibrary().then(d => {
+      const fetched = d?.songs?.length || 0
+      console.log(`[libraryStore] addSong reconcile: fetched ${fetched} entries from server`)
       if (d?.songs && d.songs.length > 0) {
-        set({ entries: d.songs, loaded: true })
+        const hasNew = d.songs.some((e: any) => e?.songs?.id === song.id)
+        if (!hasNew) {
+          console.warn('[libraryStore] WARNING: just-added song not in server response — keeping optimistic state')
+          // Server doesn't yet know about this song; merge optimistic so it stays visible
+          set(state => {
+            const merged = [
+              ...state.entries.filter(e => e.id === `optimistic-${song.id}`),
+              ...d.songs,
+            ]
+            return { entries: merged, loaded: true }
+          })
+        } else {
+          set({ entries: d.songs, loaded: true })
+        }
       }
     }).catch(e => console.error('[libraryStore] addSong refresh failed:', e))
   },

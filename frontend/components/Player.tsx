@@ -832,7 +832,10 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
   }, [showVideo]) // eslint-disable-line
 
   // ── VIDEO turns OFF — resume audio ────────────────────
-  // FIX 4a: only run when actually transitioning from showVideo=true → false
+  // Only handles the TIME SYNC (jump audio element to wherever the video was).
+  // Mute/gain restoration is handled in handleVideoToggle (single source of
+  // truth). audio.muted is NEVER set here — using audio.muted alongside
+  // _boost.gain caused the "muted until reload" desync bug.
   useEffect(() => {
     if (showVideo) return                     // video just turned on — skip
     if (!prevShowVideo.current) return        // ← GUARD: skip on initial mount
@@ -845,9 +848,6 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
       ? latestVideoTime.current
       : wallEst
     audio.currentTime = Math.max(0, Math.min(bestTime, audio.duration || 9999))
-    audio.muted       = false
-    audio.volume      = usePlayerStore.getState().volume
-    if (_boost) _boost.gain.value = MAX_BOOST
     audio.play().catch(console.error)
     usePlayerStore.getState().setIsPlaying(true)
     setIsVideoPlaying(false)
@@ -883,7 +883,6 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
         : videoStartAudioTime.current + elapsed
       if (audio) {
         audio.currentTime = Math.max(0, best)
-        audio.muted       = false
         audio.volume      = usePlayerStore.getState().volume
         if (_boost) _boost.gain.value = MAX_BOOST
         audio.play().catch(console.error)
@@ -911,28 +910,28 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
   // analyser, so the magic visualizer keeps reacting to beats while the
   // YouTube iframe handles user-audible playback.
   async function handleVideoToggle() {
+    // Single source of truth for audibility: _boost.gain.value (0 = mute,
+    // MAX_BOOST = audible). audio.muted is intentionally LEFT FALSE so the
+    // browser's mute state never desyncs from our WebAudio mute state — that
+    // desync was the root cause of "audio plays in mute until reload".
     const audio = getAudio()
+    await resumeAudioGraph()  // make sure context is running before any gain change
+    if (audio) {
+      audio.muted = false                                // never use native mute
+      audio.volume = usePlayerStore.getState().volume    // keep slider in sync
+    }
+
     if (!showVideo) {
-      // Turning video ON: silence audio output but keep the element playing
-      // so the analyser still sees real-time frequency data for visuals.
-      ensureAnalyser()
+      // Turning video ON: silence audio via gain only, keep element playing
+      // so the analyser still feeds real-time frequency data for the visualizer.
       if (_boost) _boost.gain.value = 0
-      if (audio) { audio.muted = true; audio.play().catch(() => {}) }
+      if (audio) audio.play().catch(() => {})
       usePlayerStore.getState().setIsPlaying(false)
       setShowVideo(true)
     } else {
-      // Turning video OFF: restore audible audio. CRITICAL: await the context
-      // resume BEFORE setting gain/muted, otherwise gain changes on a still-
-      // suspended context produce no sound and we get the "song plays muted
-      // until reload" bug.
-      await resumeAudioGraph()
+      // Turning video OFF: restore audible audio.
       if (_boost) _boost.gain.value = MAX_BOOST
-      if (audio) {
-        audio.muted = false
-        audio.volume = usePlayerStore.getState().volume
-        // Explicit play in case the audio element got paused while in video mode
-        audio.play().catch(() => {})
-      }
+      if (audio) audio.play().catch(() => {})
       setShowVideo(false)
     }
   }
