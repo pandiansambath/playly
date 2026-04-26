@@ -86,7 +86,7 @@ export async function downloadVideoFile(
   if (!res.ok) throw new Error(await res.text())
   const total = Number(res.headers.get('content-length') || 0)
   const reader = res.body!.getReader()
-  const chunks: Uint8Array[] = []
+  const chunks: BlobPart[] = []
   let received = 0
   while (true) {
     const { done, value } = await reader.read()
@@ -160,20 +160,22 @@ export async function downloadFinalize(
 }
 
 /** Run the full Option-3 flow: init → browser fetches tunnel → finalize.
- *  onProgress(receivedBytes, totalBytes) lets the UI render a progress bar. */
+ *  onProgress(receivedBytes, totalBytes) lets the UI render a progress bar.
+ *  Returns { song, blob? } so the caller can register the blob with
+ *  playerStore.registerBlob() for instant playback without re-fetching R2. */
 export async function downloadV2(
   youtube_id: string,
   onProgress?: (received: number, total: number) => void,
-): Promise<DownloadInitCachedResp['song']> {
+): Promise<{ song: DownloadInitCachedResp['song']; blob: Blob | null }> {
   const init = await downloadInit(youtube_id)
-  if (init.cached) return init.song
+  if (init.cached) return { song: init.song, blob: null }
 
   // Browser fetches the tunnel URL directly — residential IP, ACAO: * confirmed
   const tRes = await fetch(init.tunnel_url)
   if (!tRes.ok) throw new Error(`Tunnel fetch failed: ${tRes.status}`)
   const total = Number(tRes.headers.get('content-length') || 0)
   const reader = tRes.body!.getReader()
-  const chunks: Uint8Array[] = []
+  const chunks: BlobPart[] = []
   let received = 0
   while (true) {
     const { done, value } = await reader.read()
@@ -190,7 +192,7 @@ export async function downloadV2(
   const result = await downloadFinalize(
     youtube_id, init.title, init.thumbnail_url, duration_seconds, blob,
   )
-  return result.song
+  return { song: result.song, blob }
 }
 
 export const api = {

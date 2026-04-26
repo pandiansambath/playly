@@ -59,11 +59,13 @@ def _upload_to_supabase(mp3_bytes: bytes, storage_path: str) -> str:
     return supabase.storage.from_("songs").get_public_url(storage_path)
 
 def _upload_audio(mp3_bytes: bytes, youtube_id: str) -> str:
-    """Try R2 first, fall back to Supabase storage."""
+    """Try R2 first, fall back to Supabase storage. Object key is just
+    `<youtube_id>.mp3` — the bucket name `songs` is the path prefix already
+    (was producing songs/songs/<id>.mp3 before)."""
     r2_url = _upload_to_r2(mp3_bytes, f"{youtube_id}.mp3")
     if r2_url:
         return r2_url
-    return _upload_to_supabase(mp3_bytes, f"songs/{youtube_id}.mp3")
+    return _upload_to_supabase(mp3_bytes, f"{youtube_id}.mp3")
 
 router = APIRouter()
 

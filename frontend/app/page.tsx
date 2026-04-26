@@ -11,7 +11,7 @@ import { SearchResult, YTResult } from '@/components/SearchResult'
 import { useAuth } from '@/components/AuthProvider'
 import { showToast } from '@/components/Toast'
 import { supabase } from '@/lib/supabase'
-import { usePlayerStore } from '@/store/playerStore'
+import { usePlayerStore, registerBlob } from '@/store/playerStore'
 import { useLibraryStore } from '@/store/libraryStore'
 import { Song } from '@/lib/supabase'
 
@@ -564,10 +564,13 @@ function SearchPage() {
     try {
       // Frontend-driven flow (Option 3): browser does the bulk MP3 fetch from
       // a residential IP, sidesteps YouTube/Cloudflare datacenter blocks.
-      const song = await downloadV2(r.youtube_id, (received, total) => {
+      const { song, blob } = await downloadV2(r.youtube_id, (received, total) => {
         const pct = total > 0 ? Math.round((received / total) * 100) : Math.min(99, received / 50_000)
         setProgress(p => new Map(p).set(r.youtube_id, pct))
       })
+      // Register the bytes we already have so the user can play instantly
+      // without re-fetching from R2.
+      if (blob && song.supabase_url) registerBlob(song.supabase_url, blob)
       setDownloadedSongs(prev => new Map(prev).set(r.youtube_id, song))
       useLibraryStore.getState().addSong(song)
       setDone(d => new Set([...d, r.youtube_id]))

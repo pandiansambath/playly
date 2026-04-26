@@ -51,15 +51,24 @@ export function preloadSongs(songs: Song[]) {
   songs.forEach(s => {
     if (s.supabase_url && s.supabase_url !== currentUrl) warmCdn(s.supabase_url)
   })
-  // 2) Full blob download — first 3 in parallel, rest staggered 500ms
+  // 2) Full blob download — more aggressive than before so revisits feel
+  //    instant: first 5 in parallel, rest staggered 150 ms.
   songs.forEach((song, i) => {
     const url = song.supabase_url
     if (!url || url === currentUrl) return
     if (blobUrlCache.has(url) || fetchingCache.has(url)) return
     if (!preloadCache.has(url)) preloadCache.set(url, new Audio())
-    const delay = i < 3 ? 0 : (i - 2) * 500
+    const delay = i < 5 ? 0 : (i - 4) * 150
     setTimeout(() => downloadToBlob(url), delay)
   })
+}
+
+// Register an already-fetched blob (e.g. the bytes we just downloaded from
+// cnv.cx during a V2 add) so the user can play that song instantly without a
+// second round-trip to R2. Called from handleDownload after upload succeeds.
+export function registerBlob(url: string, mp3: Blob) {
+  if (!url || blobUrlCache.has(url)) return
+  blobUrlCache.set(url, URL.createObjectURL(mp3))
 }
 
 // Eagerly download a specific song's blob now — no stagger.

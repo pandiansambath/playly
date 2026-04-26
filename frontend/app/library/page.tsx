@@ -11,11 +11,12 @@ import { showToast } from '@/components/Toast'
 type SortKey = 'added' | 'alpha'
 
 export default function LibraryPage() {
-  const entries = useLibraryStore(s => s.entries)
-  const loaded  = useLibraryStore(s => s.loaded)
-  const loading = useLibraryStore(s => s.loading) && !loaded
-  const [filter,   setFilter]   = useState('')
-  const [sort,     setSort]     = useState<SortKey>('added')
+  const entries   = useLibraryStore(s => s.entries)
+  const loaded    = useLibraryStore(s => s.loaded)
+  const lastError = useLibraryStore(s => s.lastError)
+  const loading   = useLibraryStore(s => s.loading) && !loaded
+  const [filter, setFilter] = useState('')
+  const [sort,   setSort]   = useState<SortKey>('added')
   const setCurrentSong = usePlayerStore(s => s.setCurrentSong)
 
   useEffect(() => {
@@ -183,7 +184,7 @@ export default function LibraryPage() {
         </div>
       )}
 
-      {/* Empty */}
+      {/* Empty / Error */}
       {!loading && filtered.length === 0 && (
         <div className="flex flex-col items-center py-24 fade-in">
           <div className="w-20 h-20 rounded-3xl flex items-center justify-center mb-5"
@@ -191,11 +192,25 @@ export default function LibraryPage() {
             <Library size={36} style={{ color: 'var(--text-muted)', opacity: 0.5 }} />
           </div>
           <p className="text-base font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>
-            {filter ? 'No matches found' : 'Library is empty'}
+            {lastError ? 'Couldn’t load library' : filter ? 'No matches found' : 'Library is empty'}
           </p>
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            {filter ? 'Try a different search term' : 'Search for songs and add them!'}
+          <p className="text-sm mb-3" style={{ color: 'var(--text-muted)' }}>
+            {lastError
+              ? 'Something went wrong fetching your songs.'
+              : filter ? 'Try a different search term' : 'Search for songs and add them!'}
           </p>
+          {lastError && (
+            <>
+              <p className="text-xs mb-3 max-w-md text-center" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>
+                {lastError}
+              </p>
+              <button
+                onClick={() => useLibraryStore.getState().fetch(true)}
+                className="btn-accent px-4 py-2 rounded-xl text-xs font-bold">
+                Retry
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
