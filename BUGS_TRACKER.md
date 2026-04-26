@@ -5,6 +5,49 @@
 
 ---
 
+## 🔥 ACTIVE BUG QUEUE (work 2-at-a-time, push, user confirms, next)
+
+Priority is roughly top-to-bottom. Pick 2, fix, push, wait for user verification before tackling the next 2.
+
+### Player & playback
+- [ ] **B1. Auto-skip storm on click** — clicking a song in library triggers a flurry of skip-to-next, lands on a different song than user clicked. Reproduced with "Meesaya Murukku" (lands on "Semma Song").
+- [ ] **B2. Video → audio toggle silently mutes audio** — flaky; works for some songs, fails for others. After toggling video off, audio plays but is muted; reload fixes it. Long-standing intermittent issue.
+- [ ] **B3. Slow first-play latency** — songs sometimes take ~4s to start when clicked, even though library was preloaded. Intermittent.
+- [ ] **B4. Library refresh STILL flaky** — even after the Zustand store + force-fetch fix, user reports the "Kaasethaan Kadavula Da" download didn't appear in library until logout/login. Need DevTools console output to diagnose remaining cases.
+
+### Search
+- [ ] **B5. Pasting a YouTube URL in the search bar shows no results** — e.g. `https://youtu.be/kfgyqMJBn8k?si=...`. Backend search likely needs to detect pasted URLs and resolve to a single video.
+- [ ] **B6. Search bias toward lyric/audio-only versions** — query `"vandi vandi song jayam movie"` only returns lyric videos; the original Sun Music video song (`kfgyqMJBn8k`) doesn't appear. Same query on YouTube DOES surface it. Likely missing view-count boost or wrong category filter in `backend/routers/search.py`.
+
+### Developer page
+- [ ] **B7. Photos not smooth on entry** — appear in 1-2 sec but flicker, no skeleton/fade.
+- [ ] **B8. Background "insecurity" song doesn't play instantly** — should preload before user enters the page.
+
+### Visualizer / magic
+- [ ] **B9. MagicCanvas effects need enhancement** — user wanted the orbs/missiles/ripples themselves richer (more impressive visuals), not just the button styling we did earlier.
+
+### Storage
+- [x] **B10. R2 secrets missing in AKS** — songs were uploading to Supabase (over quota). Fixed 2026-04-26: keys patched into `playly-secrets`, backend rolled out, new uploads go to R2.
+- [x] **B11. Supabase upload path bug** — was producing `songs/songs/<id>.mp3`. Fixed in `_upload_audio` + 5 existing rows repaired in DB.
+
+### Polish
+- [ ] **B12. Avatars still on Supabase** — `frontend/app/profile/page.tsx` uploads to Supabase, should move to R2.
+- [ ] **B13. Migrate old Supabase Storage assets to R2** — small one-time script.
+- [ ] **B14. Landing page polish** (desktop + mobile).
+
+---
+
+## ✅ Already shipped this work cycle (for reference)
+
+- Frontend-driven download (Option 3) using `cnv.cx` + browser-residential IP — 5-10s downloads at zero cost
+- Zustand `libraryStore` with optimistic updates + retry button on failure + console logging
+- More aggressive `preloadSongs` (5 parallel, 150ms stagger)
+- `registerBlob()` so newly-downloaded songs play instantly without re-fetching R2
+- R2 secrets in AKS (✅ today)
+- Supabase double-prefix bug fixed in code + DB
+
+---
+
 ## Codebase Snapshot (for context recovery)
 
 - **Frontend**: Next.js (App Router) in `frontend/` — `app/`, `components/`, `store/{playerStore,libraryStore}.ts`, `lib/{api,supabase,colorExtract}.ts`.
