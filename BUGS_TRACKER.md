@@ -29,6 +29,8 @@ Priority is roughly top-to-bottom. Pick 2, fix, push, wait for user verification
 ### Storage
 - [x] **B10. R2 secrets missing in AKS** — songs were uploading to Supabase (over quota). Fixed 2026-04-26: keys patched into `playly-secrets`, backend rolled out, new uploads go to R2.
 - [x] **B11. Supabase upload path bug** — was producing `songs/songs/<id>.mp3`. Fixed in `_upload_audio` + 5 existing rows repaired in DB.
+- [x] **B15. Migrate old Supabase Storage songs to R2** — script `scripts/migrate_supabase_to_r2.py` runs server-side via service-role (bypasses cached-egress quota). Migrated 20/20 songs successfully on 2026-04-26. All `supabase_url` columns now point at `pub-fd9fe8dc59834d7bad552cdd1e3db39a.r2.dev/songs/<id>.mp3`. The `auto-skip storm` (B1) trigger is gone because every song now has a working URL.
+- [x] **B16. Browser caches stale UI until incognito** — root cause: Next.js was serving HTML with `Cache-Control: s-maxage=31536000` (1 year), so the Cloudflare CDN held onto old HTML pointing at old JS bundles even after a deploy. Fixed in `frontend/next.config.js` — HTML now `public, max-age=0, must-revalidate` (browser revalidates on each visit; tiny network hit), while hashed `/_next/static/*` chunks stay `immutable, max-age=31536000` (instant load when filename matches).
 
 ### Polish
 - [ ] **B12. Avatars still on Supabase** — `frontend/app/profile/page.tsx` uploads to Supabase, should move to R2.
