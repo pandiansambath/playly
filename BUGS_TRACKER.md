@@ -26,8 +26,12 @@ Priority is roughly top-to-bottom. Pick 2, fix, push, wait for user verification
 - [x] **B6. Search bias toward lyric/audio-only versions** — Fixed alongside B5. Dropped the `videoCategoryId=10` (Music) filter that was hiding official MVs filed under Entertainment. Search results are now re-ranked by composite score = relevance_position − 1.6·log10(view_count), so a 10× views official MV beats a slightly-more-relevant lyric video without letting unrelated mega-hits jump to the top.
 
 ### Developer page
-- [ ] **B7. Photos not smooth on entry** — appear in 1-2 sec but flicker, no skeleton/fade.
-- [ ] **B8. Background "insecurity" song doesn't play instantly** — should preload before user enters the page.
+- [x] **B7. Photos not smooth on entry** — Fixed via new `PhotoTile` component (in `frontend/app/developer/page.tsx`). Each tile renders a coloured shimmer placeholder until its image fires `onLoad` (or `complete` for cached cases), then crossfades over 360ms with a subtle 1.04→1.00 zoom-in. No more "black square then pop" flicker.
+- [x] **B8. Background song doesn't play instantly** — Added `<link rel="preload" as="audio" href="/page_song.mp3">` injected at module-evaluation time so the browser starts fetching at HIGH priority in parallel with the JS bundle (instead of waiting for the React effect to mount). Also explicit `audio.load()` on construction.
+
+### Storage / CORS (the smoking gun for "audio plays muted")
+- [x] **B19. R2 bucket missing CORS rules** — Chrome console literally said `MediaElementAudioSource outputs zeroes due to CORS access restrictions` whenever WebAudio rerouted the playing audio (magic button, video toggle, equaliser). Fixed by `scripts/setup_r2_cors.py`: R2 now sends `Access-Control-Allow-Origin: <playly.online et al>` + `GET, HEAD` methods. Verified live with `curl -I -H "Origin: https://playly.online"`.
+- [x] **B19b. Missing `audio.crossOrigin="anonymous"`** — even with CORS headers, MediaElementAudioSource emits zeroes unless the audio element is created with the `crossorigin` attribute set BEFORE assigning `src`. Fixed in `frontend/store/playerStore.ts` `getAudio()`.
 
 ### Visualizer / magic
 - [ ] **B9. MagicCanvas effects need enhancement** — user wanted the orbs/missiles/ripples themselves richer (more impressive visuals), not just the button styling we did earlier.

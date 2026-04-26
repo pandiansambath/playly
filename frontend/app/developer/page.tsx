@@ -110,6 +110,72 @@ PHOTOS.forEach(p => {
 })
 
 // ══════════════════════════════════════════════════════════════
+// PHOTO TILE — fades in only after the image is decoded so there is
+// no "black square then pop" flicker. Uses native lazy-load + a tiny
+// pre-decoded onLoad gate; first 12 are eager + decoded inline.
+// ══════════════════════════════════════════════════════════════
+function PhotoTile({
+  photo, mood, index, onOpen,
+}: {
+  photo: Photo
+  mood: typeof MOODS[number]
+  index: number
+  onOpen: () => void
+}) {
+  const [loaded, setLoaded] = useState(false)
+  const imgRef = useRef<HTMLImageElement | null>(null)
+
+  // If the image is already cached when the element mounts, the `load`
+  // event won't fire — check `complete` and trigger immediately.
+  useEffect(() => {
+    if (imgRef.current?.complete) setLoaded(true)
+  }, [])
+
+  return (
+    <div
+      className="dev-tile"
+      onClick={onOpen}
+      style={{ animationDelay: `${Math.min(index, 24) * 0.04}s` }}
+    >
+      <img
+        ref={imgRef}
+        src={photo.src}
+        alt=""
+        loading={index < 12 ? 'eager' : 'lazy'}
+        fetchPriority={index < 6 ? 'high' : 'auto'}
+        decoding="async"
+        onLoad={() => setLoaded(true)}
+        onError={() => setLoaded(true)}
+        className="dev-tile-img"
+        style={{
+          opacity: loaded ? 1 : 0,
+          transition: 'opacity 360ms ease, transform 600ms cubic-bezier(0.16,1,0.3,1)',
+          transform: loaded ? 'scale(1)' : 'scale(1.04)',
+        }}
+      />
+      {!loaded && (
+        <div
+          className="absolute inset-0"
+          aria-hidden
+          style={{
+            background: `linear-gradient(135deg, rgba(${mood.accent},0.22), rgba(${mood.accent},0.06))`,
+            animation: 'dev-tile-shimmer 1.4s ease-in-out infinite',
+          }}
+        />
+      )}
+      <div className="dev-tile-overlay" />
+      <div className="dev-tile-meta">
+        <span className="dev-tile-mood" style={{
+          background: `rgba(${mood.accent},0.22)`,
+          border: `1px solid rgba(${mood.accent},0.4)`,
+          color: `rgb(${mood.accent})`,
+        }}>{mood.emoji} {mood.label}</span>
+      </div>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════
 // TIMELINE — real journey
 // ══════════════════════════════════════════════════════════════
 const TIMELINE = [
@@ -136,12 +202,26 @@ const TECH = [
 // downloading as soon as this JS is parsed (before React mounts).
 // ══════════════════════════════════════════════════════════════
 
-// Preload immediately at module evaluation time — NOT inside useEffect
+// Preload immediately at module evaluation time — NOT inside useEffect.
+// Also inject a <link rel="preload" as="audio"> so the browser fetches the
+// MP3 with HIGH priority in parallel with the JS bundle, instead of waiting
+// for the Audio element to be constructed. This makes the ambient song
+// audible the moment user clicks (vs. 1-2s of buffering before).
 const _preloadedAudio: HTMLAudioElement | null = typeof window !== 'undefined' ? (() => {
+  if (!document.querySelector('link[data-preload-page-song]')) {
+    const link = document.createElement('link')
+    link.rel = 'preload'
+    link.as = 'audio'
+    link.href = '/page_song.mp3'
+    link.setAttribute('data-preload-page-song', '1')
+    document.head.appendChild(link)
+  }
   const a = new Audio('/page_song.mp3')
   a.loop = true
   a.volume = 0
   a.preload = 'auto'
+  // Force the browser to start the network fetch immediately
+  try { a.load() } catch {}
   return a
 })() : null
 
@@ -569,20 +649,13 @@ export default function DeveloperPage() {
           {filtered.map((p, i) => {
             const m = MOODS.find(x => x.id === p.mood)!
             return (
-              <div key={p.src}
-                className="dev-tile"
-                onClick={() => setLightbox(i)}
-                style={{ animationDelay: `${Math.min(i, 24) * 0.04}s` }}>
-                <img src={p.src} alt="" loading={i < 12 ? 'eager' : 'lazy'} fetchPriority={i < 6 ? 'high' : 'auto'} className="dev-tile-img" />
-                <div className="dev-tile-overlay" />
-                <div className="dev-tile-meta">
-                  <span className="dev-tile-mood" style={{
-                    background: `rgba(${m.accent},0.22)`,
-                    border: `1px solid rgba(${m.accent},0.4)`,
-                    color: `rgb(${m.accent})`,
-                  }}>{m.emoji} {m.label}</span>
-                </div>
-              </div>
+              <PhotoTile
+                key={p.src}
+                photo={p}
+                mood={m}
+                index={i}
+                onOpen={() => setLightbox(i)}
+              />
             )
           })}
         </div>

@@ -9,6 +9,14 @@ export function getAudio(): HTMLAudioElement {
   if (typeof window === 'undefined') return null as any
   if (!globalAudio) {
     globalAudio = new Audio()
+    // CRITICAL: must be set BEFORE assigning src. Without this,
+    // (a) MediaElementAudioSource (used by the magic visualizer + video toggle)
+    //     emits ZEROES — Chrome console literally says "MediaElementAudioSource
+    //     outputs zeroes due to CORS access restrictions". This was the
+    //     root cause of "audio plays in mute until reload".
+    // (b) fetch() of the same MP3 URL gets blocked by CORS preflight.
+    // R2's bucket CORS rules now allow our origins (see scripts/setup_r2_cors.py).
+    globalAudio.crossOrigin = 'anonymous'
     globalAudio.preload = 'auto'
   }
   return globalAudio
