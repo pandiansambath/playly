@@ -10,14 +10,14 @@
 Priority is roughly top-to-bottom. Pick 2, fix, push, wait for user verification before tackling the next 2.
 
 ### Player & playback
-- [ ] **B1. Auto-skip storm on click** — clicking a song in library triggers a flurry of skip-to-next, lands on a different song than user clicked. Reproduced with "Meesaya Murukku" (lands on "Semma Song").
+- [x] **B1. Auto-skip storm on click** — Fixed in `frontend/components/Player.tsx`. Root cause: when an audio URL fails (e.g. song on Supabase Storage, now over quota → 402), the `error` event was instantly calling `next()`. The next song's URL also failed → another `error` → storm. Fix: throttle error-skip to ≥1.5 s gap and bail after 3 consecutive errors with no successful play in between. Also reset the consecutive counter on `playing` / `canplay`.
 - [ ] **B2. Video → audio toggle silently mutes audio** — flaky; works for some songs, fails for others. After toggling video off, audio plays but is muted; reload fixes it. Long-standing intermittent issue.
 - [ ] **B3. Slow first-play latency** — songs sometimes take ~4s to start when clicked, even though library was preloaded. Intermittent.
 - [ ] **B4. Library refresh STILL flaky** — even after the Zustand store + force-fetch fix, user reports the "Kaasethaan Kadavula Da" download didn't appear in library until logout/login. Need DevTools console output to diagnose remaining cases.
 
 ### Search
-- [ ] **B5. Pasting a YouTube URL in the search bar shows no results** — e.g. `https://youtu.be/kfgyqMJBn8k?si=...`. Backend search likely needs to detect pasted URLs and resolve to a single video.
-- [ ] **B6. Search bias toward lyric/audio-only versions** — query `"vandi vandi song jayam movie"` only returns lyric videos; the original Sun Music video song (`kfgyqMJBn8k`) doesn't appear. Same query on YouTube DOES surface it. Likely missing view-count boost or wrong category filter in `backend/routers/search.py`.
+- [x] **B5. Pasting a YouTube URL in the search bar shows no results** — Fixed in `backend/services/youtube.py`. `_extract_yt_id` now detects YouTube URLs (watch / youtu.be / shorts / embed) and bare 11-char IDs, then resolves directly via `videos.list` → returns just that one video.
+- [x] **B6. Search bias toward lyric/audio-only versions** — Fixed alongside B5. Dropped the `videoCategoryId=10` (Music) filter that was hiding official MVs filed under Entertainment. Search results are now re-ranked by composite score = relevance_position − 1.6·log10(view_count), so a 10× views official MV beats a slightly-more-relevant lyric video without letting unrelated mega-hits jump to the top.
 
 ### Developer page
 - [ ] **B7. Photos not smooth on entry** — appear in 1-2 sec but flicker, no skeleton/fade.

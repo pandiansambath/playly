@@ -1242,14 +1242,50 @@ export function Player() {
     }
     const clearStall = () => { if (stallTimer) { clearTimeout(stallTimer); stallTimer = null } }
 
+    // Track consecutive error-skips. If a song's URL is broken (e.g. on
+    // Supabase Storage now over quota), the audio element fires `error`,
+    // which used to immediately call next() → next song's URL is also
+    // broken → another `error` → STORM. We now require a real-time gap
+    // between error-skips so a broken-URL chain doesn't burn through the
+    // whole queue in 100ms. After 2 consecutive errors with no successful
+    // play in between, we stop skipping and surface the failure.
+    let lastErrorAt = 0
+    let consecutiveErrors = 0
+    const ERROR_SKIP_MIN_GAP_MS = 1500
+
     const onTime    = () => setCurrentTime(audio.currentTime)
     const onDur     = () => setDuration(audio.duration)
-    const onEnded   = () => { clearStall(); usePlayerStore.getState().next() }
-    const onPlaying = () => { clearStall(); setIsPlaying(true); usePlayerStore.getState().setBuffering(false) }
+    const onEnded   = () => { clearStall(); consecutiveErrors = 0; usePlayerStore.getState().next() }
+    const onPlaying = () => {
+      clearStall(); consecutiveErrors = 0
+      setIsPlaying(true); usePlayerStore.getState().setBuffering(false)
+    }
     const onWaiting = () => { armStallTimer(); usePlayerStore.getState().setBuffering(true) }
-    const onCanPlay = () => { clearStall(); usePlayerStore.getState().setBuffering(false) }
+    const onCanPlay = () => { clearStall(); consecutiveErrors = 0; usePlayerStore.getState().setBuffering(false) }
     const onLoadStart = () => armStallTimer()
-    const onError     = () => usePlayerStore.getState().next()
+    const onError = () => {
+      const now = Date.now()
+      consecutiveErrors++
+      // Bail out of an error-storm: don't let a chain of broken URLs
+      // burn through the whole queue in milliseconds.
+      if (consecutiveErrors >= 3) {
+        console.error('[player] giving up after 3 consecutive errors')
+        usePlayerStore.getState().setBuffering(false)
+        return
+      }
+      if (now - lastErrorAt < ERROR_SKIP_MIN_GAP_MS) {
+        // Too fast — the previous song's error just fired and we'd be
+        // skipping mid-load. Wait until the gap elapses, then skip once.
+        const wait = ERROR_SKIP_MIN_GAP_MS - (now - lastErrorAt)
+        setTimeout(() => {
+          lastErrorAt = Date.now()
+          usePlayerStore.getState().next()
+        }, wait)
+        return
+      }
+      lastErrorAt = now
+      usePlayerStore.getState().next()
+    }
     audio.addEventListener('timeupdate',     onTime)
     audio.addEventListener('durationchange', onDur)
     audio.addEventListener('ended',          onEnded)
