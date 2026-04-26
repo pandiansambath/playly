@@ -17,20 +17,23 @@ interface Props {
   onPlay?: (r: YTResult) => void
   isDownloading: boolean
   isDone?: boolean
+  /** Real download progress 0-100 from the V2 flow. If undefined, falls back
+   *  to a simulated stepper so the bar still feels alive. */
+  progress?: number
 }
 
-function useProgress(active: boolean, done: boolean) {
+function useFakeProgress(active: boolean, done: boolean) {
   const [pct, setPct] = useState(0)
   useEffect(() => {
     if (!active && !done) { setPct(0); return }
     if (done) { setPct(100); return }
     setPct(0)
     const steps = [
-      { target: 25,  delay: 200  },
-      { target: 50,  delay: 800  },
-      { target: 70,  delay: 1800 },
-      { target: 85,  delay: 3000 },
-      { target: 90,  delay: 5000 },
+      { target: 25, delay: 200 },
+      { target: 50, delay: 800 },
+      { target: 70, delay: 1800 },
+      { target: 85, delay: 3000 },
+      { target: 90, delay: 5000 },
     ]
     const timers: ReturnType<typeof setTimeout>[] = []
     steps.forEach(s => { timers.push(setTimeout(() => setPct(s.target), s.delay)) })
@@ -39,8 +42,9 @@ function useProgress(active: boolean, done: boolean) {
   return pct
 }
 
-export function SearchResult({ result, onDownload, onPlay, isDownloading, isDone }: Props) {
-  const pct = useProgress(isDownloading, !!isDone)
+export function SearchResult({ result, onDownload, onPlay, isDownloading, isDone, progress }: Props) {
+  const fake = useFakeProgress(isDownloading, !!isDone)
+  const pct = progress != null ? progress : fake
 
   return (
     <div

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { api } from '@/lib/api'
+import { api, downloadV2 } from '@/lib/api'
 import { SearchResult, YTResult } from '@/components/SearchResult'
 import { useAuth } from '@/components/AuthProvider'
 import { showToast } from '@/components/Toast'
@@ -554,31 +554,39 @@ function SearchPage() {
     return () => clearTimeout(debounceRef.current)
   }, [query])
 
+  // Live download progress (0-100) keyed by youtube_id — drives the bar in SearchResult
+  const [progress, setProgress] = useState<Map<string, number>>(new Map())
+
   async function handleDownload(r: YTResult) {
     if (downloading.has(r.youtube_id)) return
     setDownloading(d => new Set([...d, r.youtube_id]))
+    setProgress(p => new Map(p).set(r.youtube_id, 0))
     try {
-      const result = await api.download(r.youtube_id)
-      // Store the real song data (with supabase_url) for immediate playback
-      if (result?.song) {
-        setDownloadedSongs(prev => new Map(prev).set(r.youtube_id, result.song))
-        // Optimistic library update — song appears in /library the moment we
-        // navigate there, no cache-invalidation guessing.
-        useLibraryStore.getState().addSong(result.song)
-      }
+      // Frontend-driven flow (Option 3): browser does the bulk MP3 fetch from
+      // a residential IP, sidesteps YouTube/Cloudflare datacenter blocks.
+      const song = await downloadV2(r.youtube_id, (received, total) => {
+        const pct = total > 0 ? Math.round((received / total) * 100) : Math.min(99, received / 50_000)
+        setProgress(p => new Map(p).set(r.youtube_id, pct))
+      })
+      setDownloadedSongs(prev => new Map(prev).set(r.youtube_id, song))
+      useLibraryStore.getState().addSong(song)
       setDone(d => new Set([...d, r.youtube_id]))
       showToast('Added to library ✓')
-      // Bust Next.js Router Cache so library page re-fetches fresh on next visit
       router.refresh()
     } catch (e: any) {
       const raw: string = e?.message || ''
-      const friendly = raw.includes('cookie') || raw.includes('sign in') || raw.includes('bot') || raw.includes('authentication')
-        ? 'YouTube blocked this download. Try another song or contact the admin.'
+      const friendly = raw.includes('cookie') || raw.includes('sign in') || raw.includes('bot')
+        ? 'YouTube blocked this download. Try another song.'
         : raw.includes('private') || raw.includes('unavailable')
           ? 'This video is private or unavailable.'
-          : 'Download failed. Please try again.'
+          : raw.includes('Tunnel') || raw.includes('Conversion')
+            ? 'Conversion service is busy. Please try again.'
+            : 'Download failed. Please try again.'
       showToast(friendly, false)
-    } finally { setDownloading(d => { const s = new Set(d); s.delete(r.youtube_id); return s }) }
+    } finally {
+      setDownloading(d => { const s = new Set(d); s.delete(r.youtube_id); return s })
+      setProgress(p => { const m = new Map(p); m.delete(r.youtube_id); return m })
+    }
   }
 
   function handlePlay(r: YTResult) {
@@ -638,6 +646,7 @@ function SearchPage() {
                 onPlay={handlePlay}
                 isDownloading={downloading.has(r.youtube_id)}
                 isDone={done.has(r.youtube_id)}
+                progress={progress.get(r.youtube_id)}
               />
             </div>
           ))}

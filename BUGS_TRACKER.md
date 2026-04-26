@@ -105,7 +105,38 @@
   - **MVP cheap version (skip fingerprinting)**: client-side correlation on first toggle. Load 5s of YT audio buffer, compare with masstamilan buffer at same position via Web Audio `AnalyserNode` peaks → estimate offset. Cache forever.
   - **Result**: masstamilan speed for 100% of plays + accurate video sync for 100% of toggles. One-time ~5s background cost per new song.
 
-### 2.i.0 Download strategy — FINAL (2026-04-25, after extensive testing)
+### 2.i.0 Download strategy — SHIPPED (2026-04-26, Option 3 frontend-driven hybrid)
+
+**THE FIX**: tested cnv.cx from a residential IP (this PC) — **works in 1.1s for the conversion call** AND the tunnel CDN sends `Access-Control-Allow-Origin: *`. Browser fetch from any origin is allowed. Architecture:
+
+```
+Frontend (browser, residential IP) — clicks "Add Song"
+   ↓
+Backend /download/init (datacenter is fine here) — calls cnv.cx, returns tunnel URL + metadata
+   ↓
+Frontend fetch(tunnel_url) — residential IP, no CF block, ACAO:* permits
+   ↓
+Frontend POST /download/finalize (mp3 bytes as body)
+   ↓
+Backend uploads to R2, inserts in songs + user_songs, returns row
+   ↓
+Frontend addSong → library shows it instantly
+```
+
+**Cost**: ₹0 forever. **No PC dependency**. **No proxies**. Works whenever any user opens the app — that's the only time we need a residential IP, and the user IS the residential IP.
+
+**Code shipped (commit pending)**:
+- Backend: `/download/init` + `/download/finalize` in [backend/routers/download.py](backend/routers/download.py).
+- Frontend: `downloadV2(...)` in [frontend/lib/api.ts](frontend/lib/api.ts); `handleDownload` in [frontend/app/page.tsx](frontend/app/page.tsx) now uses it; real progress 0-100% wired into [frontend/components/SearchResult.tsx](frontend/components/SearchResult.tsx).
+- Existing `/download` endpoint kept as deprecated fallback for any backend-only path.
+
+**Verified test from home PC** (`oracle_instance_keys/test_local.py`):
+- `/v2/sanity/key`: 0.59s
+- `/v2/converter`: 0.53s
+- Tunnel download (3.9 MB MP3): 25s on slow Wi-Fi (would be 1-2s on fast connection)
+- `access-control-allow-origin: *` on the tunnel response — ANY browser at ANY origin can fetch it
+
+**Old "FINAL" notes (kept for context)**:
 
 After extensive Playwright-driven investigation today, the **honest truth**:
 

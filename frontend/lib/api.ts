@@ -106,8 +106,96 @@ export async function downloadVideoFile(
   URL.revokeObjectURL(url)
 }
 
+// ── Frontend-driven download (Option 3) ──────────────────────────────────────
+// Browser fetches MP3 directly from cnv.cx CDN (residential IP, no Cloudflare
+// block) and uploads bytes to backend. Avoids YouTube datacenter-IP blocks
+// entirely.
+export interface DownloadInitCachedResp {
+  cached: true
+  song: {
+    id: string; youtube_id: string; title: string; movie_name: string;
+    thumbnail_url: string; duration_seconds: number; supabase_url: string
+  }
+}
+export interface DownloadInitFreshResp {
+  cached: false
+  tunnel_url: string
+  filename: string
+  youtube_id: string
+  title: string
+  thumbnail_url: string
+}
+
+export async function downloadInit(youtube_id: string, quality: '128' | '320' = '128')
+  : Promise<DownloadInitCachedResp | DownloadInitFreshResp> {
+  return post('/download/init', { youtube_id, quality })
+}
+
+export async function downloadFinalize(
+  youtube_id: string,
+  title: string,
+  thumbnail_url: string,
+  duration_seconds: number,
+  mp3Blob: Blob,
+) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Not authenticated')
+  const params = new URLSearchParams({
+    youtube_id,
+    title,
+    thumbnail_url,
+    duration_seconds: String(duration_seconds || 0),
+  })
+  const res = await fetch(`${BASE}/download/finalize?${params}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${session.access_token}`,
+      'Content-Type': 'audio/mpeg',
+    },
+    body: mp3Blob,
+  })
+  if (!res.ok) throw new Error(await res.text())
+  invalidateCache('library')
+  return res.json()
+}
+
+/** Run the full Option-3 flow: init → browser fetches tunnel → finalize.
+ *  onProgress(receivedBytes, totalBytes) lets the UI render a progress bar. */
+export async function downloadV2(
+  youtube_id: string,
+  onProgress?: (received: number, total: number) => void,
+): Promise<DownloadInitCachedResp['song']> {
+  const init = await downloadInit(youtube_id)
+  if (init.cached) return init.song
+
+  // Browser fetches the tunnel URL directly — residential IP, ACAO: * confirmed
+  const tRes = await fetch(init.tunnel_url)
+  if (!tRes.ok) throw new Error(`Tunnel fetch failed: ${tRes.status}`)
+  const total = Number(tRes.headers.get('content-length') || 0)
+  const reader = tRes.body!.getReader()
+  const chunks: Uint8Array[] = []
+  let received = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    received += value.length
+    if (onProgress) onProgress(received, total)
+  }
+  const blob = new Blob(chunks, { type: 'audio/mpeg' })
+  if (blob.size < 50_000) throw new Error(`MP3 too small (${blob.size} bytes)`)
+
+  // Estimate duration from bitrate*size (rough, for 128 kbps MP3)
+  const duration_seconds = Math.round((blob.size * 8) / 128_000)
+  const result = await downloadFinalize(
+    youtube_id, init.title, init.thumbnail_url, duration_seconds, blob,
+  )
+  return result.song
+}
+
 export const api = {
   search:             (q: string)                             => get(`/search?q=${encodeURIComponent(q)}`),
+  /** @deprecated use downloadV2 — kept as fallback for backend-only paths. */
   download:           (youtube_id: string, quality = '192')   => post('/download', { youtube_id, quality }).then(d => { invalidateCache('library'); return d }),
   getLibrary:         (page = 1)                              => cached(`library_${page}`, () => get(`/songs?page=${page}`)),
   removeSong:         (id: string)                            => del(`/songs/${id}`).then(d => { invalidateCache('library'); return d }),

@@ -79,6 +79,159 @@ def extract_movie(title: str) -> str:
             return m.group(1).strip()
     return ""
 
+# ─── Frontend-driven download flow (no datacenter IP touches the MP3 bytes) ──
+# Browser fetches MP3 directly from cnv.cx's CDN — works because:
+#   - cnv.cx returns `Access-Control-Allow-Origin: *` on tunnel responses
+#   - Cloudflare blocks datacenter IPs from yt-dl.click but ALLOWS residential
+#     IPs (= every user's browser). Verified 2026-04-26.
+# Backend's only job: ask cnv.cx for the tunnel URL, then accept the resulting
+# bytes from the browser and store them.
+
+class DownloadInitRequest(BaseModel):
+    youtube_id: str
+    quality: str = "128"   # cnv.cx supports 128 or 320 kbps for audioBitrate
+
+
+def _cnv_cx_init(youtube_id: str, audio_bitrate: str = "128") -> dict:
+    """Hit cnv.cx /v2/sanity/key + /v2/converter, return tunnel URL + filename."""
+    H = {
+        "Origin":  "https://frame.y2meta-uk.com",
+        "Referer": "https://frame.y2meta-uk.com/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    }
+    with httpx.Client(timeout=30.0) as client:
+        r0 = client.get("https://cnv.cx/v2/sanity/key", headers=H)
+        r0.raise_for_status()
+        key = r0.json()["key"]
+        r = client.post(
+            "https://cnv.cx/v2/converter",
+            data={
+                "link": f"https://youtu.be/{youtube_id}",
+                "format": "mp3",
+                "audioBitrate": audio_bitrate,
+                "videoQuality": "720",
+                "filenameStyle": "pretty",
+                "vCodec": "h264",
+            },
+            headers={**H, "key": key},
+        )
+        r.raise_for_status()
+        data = r.json()
+        if data.get("status") != "tunnel":
+            raise RuntimeError(f"cnv.cx non-tunnel response: {data}")
+        return data  # {status, url, filename}
+
+
+def _yt_oembed(youtube_id: str) -> dict:
+    """Fetch title + thumbnail from YouTube oEmbed (anonymous, no bot wall)."""
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            r = client.get(
+                "https://www.youtube.com/oembed",
+                params={
+                    "url": f"https://www.youtube.com/watch?v={youtube_id}",
+                    "format": "json",
+                },
+            )
+            if r.status_code == 200:
+                d = r.json()
+                return {
+                    "title": d.get("title", ""),
+                    "thumbnail_url": d.get("thumbnail_url", f"https://i.ytimg.com/vi/{youtube_id}/hqdefault.jpg"),
+                }
+    except Exception:
+        pass
+    return {"title": "", "thumbnail_url": f"https://i.ytimg.com/vi/{youtube_id}/hqdefault.jpg"}
+
+
+@router.post("/download/init")
+async def download_init(req: DownloadInitRequest, user=Depends(get_current_user)):
+    """STEP 1 of frontend-driven download. Returns:
+      - cached=True + song      → already in DB, frontend just adds to library
+      - cached=False + tunnel_url + metadata → frontend fetches blob, then POSTs
+        to /download/finalize
+    """
+    # Dedup — if already downloaded by anyone, reuse
+    existing = (
+        supabase.table("songs").select("*").eq("youtube_id", req.youtube_id).execute()
+    )
+    if existing.data:
+        _add_to_library(user.id, existing.data[0]["id"])
+        return {"cached": True, "song": existing.data[0]}
+
+    # Fresh download — get tunnel URL from cnv.cx + metadata from YouTube oEmbed
+    try:
+        tunnel = _cnv_cx_init(req.youtube_id, req.quality)
+    except Exception as e:
+        raise HTTPException(502, f"Conversion init failed: {e}")
+    meta = _yt_oembed(req.youtube_id)
+
+    return {
+        "cached": False,
+        "tunnel_url": tunnel["url"],
+        "filename": tunnel.get("filename", f"{req.youtube_id}.mp3"),
+        "youtube_id": req.youtube_id,
+        "title": meta["title"],
+        "thumbnail_url": meta["thumbnail_url"],
+    }
+
+
+class DownloadFinalizeRequest(BaseModel):
+    youtube_id: str
+    title: str
+    thumbnail_url: str
+    duration_seconds: int = 0
+
+
+@router.post("/download/finalize")
+async def download_finalize(
+    request: Request,
+    user=Depends(get_current_user),
+    youtube_id: str = "",
+    title: str = "",
+    thumbnail_url: str = "",
+    duration_seconds: int = 0,
+):
+    """STEP 2 of frontend-driven download. Browser POSTs the MP3 bytes as the
+    raw request body (Content-Type: audio/mpeg). We upload to R2, create the
+    songs row, and add to the user's library. Metadata comes via query params."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{6,20}", youtube_id):
+        raise HTTPException(400, "Invalid youtube_id")
+
+    # Read the MP3 bytes from request body
+    mp3_bytes = await request.body()
+    if len(mp3_bytes) < 50_000:
+        raise HTTPException(400, f"MP3 too small ({len(mp3_bytes)} bytes)")
+    if len(mp3_bytes) > 30_000_000:
+        raise HTTPException(413, "MP3 too large (>30 MB)")
+
+    # If somehow another browser raced us and finalized the same song, just dedupe
+    existing = (
+        supabase.table("songs").select("*").eq("youtube_id", youtube_id).execute()
+    )
+    if existing.data:
+        _add_to_library(user.id, existing.data[0]["id"])
+        return {"song": existing.data[0], "cached": True}
+
+    try:
+        cdn_url = _upload_audio(mp3_bytes, youtube_id)
+    except Exception as e:
+        raise HTTPException(500, f"Storage upload failed: {e}")
+
+    song_data = {
+        "youtube_id": youtube_id,
+        "title": title[:300],
+        "movie_name": extract_movie(title),
+        "thumbnail_url": thumbnail_url[:500] or f"https://i.ytimg.com/vi/{youtube_id}/hqdefault.jpg",
+        "duration_seconds": int(duration_seconds) if duration_seconds else 0,
+        "file_size_bytes": len(mp3_bytes),
+        "supabase_url": cdn_url,
+    }
+    song = supabase.table("songs").insert(song_data).execute().data[0]
+    _add_to_library(user.id, song["id"])
+    return {"song": song, "cached": False}
+
+
 @router.post("/download")
 async def download_song(req: DownloadRequest, user=Depends(get_current_user)):
     # 1. Global dedup check — reuse if already downloaded by anyone
