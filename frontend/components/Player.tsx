@@ -775,15 +775,29 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
     if (!_analyser) {
       initAnalyser()
       setAnalyserReady(!!_analyser)
-    } else if (_audioCtx?.state === 'suspended') {
-      // Context auto-suspended by browser (mobile inactivity) — resume and restore,
-      // but only unmute audio if we're NOT in video mode (video sets audio.muted=true on purpose).
-      _audioCtx.resume().then(() => {
-        const { showVideo, volume } = usePlayerStore.getState()
-        if (_boost) _boost.gain.value = showVideo ? 0 : MAX_BOOST
-        const audio = getAudio()
-        if (audio && !showVideo) { audio.muted = false; audio.volume = volume }
-      })
+      return
+    }
+    // Context auto-suspended by browser (mobile inactivity) — resume it.
+    // Do NOT touch audio.muted / boost.gain here. The .then() callback would
+    // race with whatever the caller (e.g. handleVideoToggle) set synchronously
+    // and could re-mute the audio that was just unmuted. Callers handle their
+    // own audio-state restoration after awaiting the resume.
+    if (_audioCtx?.state === 'suspended') {
+      _audioCtx.resume().catch(() => {})
+    }
+  }
+
+  // Resume the AudioContext and ensure the WebAudio graph is actually flowing
+  // before we set gain/muted. Called from any path that needs sound back on
+  // (video → audio toggle, page refocus, etc.). Returns a Promise the caller
+  // should await before setting muted/gain to avoid the previous race bug.
+  async function resumeAudioGraph(): Promise<void> {
+    if (!_analyser) {
+      initAnalyser()
+      setAnalyserReady(!!_analyser)
+    }
+    if (_audioCtx?.state === 'suspended') {
+      try { await _audioCtx.resume() } catch {}
     }
   }
 
@@ -896,21 +910,31 @@ function ExpandedPlayer({ accentColor }: { accentColor: string }) {
   // analyser → gain → destination chain still feeds frequency data to the
   // analyser, so the magic visualizer keeps reacting to beats while the
   // YouTube iframe handles user-audible playback.
-  function handleVideoToggle() {
-    ensureAnalyser()
+  async function handleVideoToggle() {
     const audio = getAudio()
     if (!showVideo) {
       // Turning video ON: silence audio output but keep the element playing
       // so the analyser still sees real-time frequency data for visuals.
+      ensureAnalyser()
       if (_boost) _boost.gain.value = 0
       if (audio) { audio.muted = true; audio.play().catch(() => {}) }
       usePlayerStore.getState().setIsPlaying(false)
+      setShowVideo(true)
     } else {
-      // Turning video OFF: restore audible audio
+      // Turning video OFF: restore audible audio. CRITICAL: await the context
+      // resume BEFORE setting gain/muted, otherwise gain changes on a still-
+      // suspended context produce no sound and we get the "song plays muted
+      // until reload" bug.
+      await resumeAudioGraph()
       if (_boost) _boost.gain.value = MAX_BOOST
-      if (audio) audio.muted = false
+      if (audio) {
+        audio.muted = false
+        audio.volume = usePlayerStore.getState().volume
+        // Explicit play in case the audio element got paused while in video mode
+        audio.play().catch(() => {})
+      }
+      setShowVideo(false)
     }
-    setShowVideo(!showVideo)
   }
 
   // ── Seek in VIDEO mode via postMessage — FIX 4d ───────
